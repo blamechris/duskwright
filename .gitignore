@@ -1,0 +1,12 @@
+.DS_Store
+node_modules/
+dist/
+build/
+.output/
+*.log
+npm-debug.log*
+.env
+.env.local
+coverage/
+.cache/
+*.zip
