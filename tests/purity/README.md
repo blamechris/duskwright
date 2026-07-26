@@ -15,19 +15,45 @@ npm run test:purity
 2. **Page-owned HTML and stylesheet text byte-identical** — against a control run in a clean
    browser. Covers both `document.styleSheets` and `document.adoptedStyleSheets`, which are
    **disjoint collections**: adopted constructed sheets do not appear in `document.styleSheets`.
-3. **The page's `adoptedStyleSheets` array is not detached** — ADR 0001 item 14.
+3. **The page's `adoptedStyleSheets` reference stays live** — the property ADR 0001 item 14
+   warned about. (The item itself turned out not to be a real violation; see the correction in that
+   ADR. The assertion is kept because nothing else in the suite would notice if a future rewrite did
+   strand the page's reference.)
 
 None is redundant. The observer catches mutations **reverted before any snapshot** (ADR 0002 C4 —
 three of the fourteen sites are exactly that). The stylesheet comparison catches `adoptedStyleSheets`
-content changes, which fire **no** `MutationRecord` at all. And the third catches wholesale array
-reassignment, which is invisible to *both* of the others: the sheets' contents are unchanged and no
-DOM node moved, but any reference the page was holding is now detached.
+content changes, which fire **no** `MutationRecord` at all. And the third catches a page's handle
+going stale, which is invisible to *both* of the others: no DOM node moves and no serialized state
+changes.
 
-> An earlier version of this harness read only `document.styleSheets` while this README claimed the
-> adopted surface was covered. It wasn't — and adding assertion 3 immediately found a real violation
-> the harness had been structurally unable to see. Recorded here because a gate that doesn't check
-> what it advertises is the exact thing this suite exists to prevent, and it happened *in the suite
-> itself*.
+> **Two things this suite got wrong about itself, recorded because a gate that doesn't check what it
+> advertises is the exact failure it exists to prevent.**
+>
+> 1. It read only `document.styleSheets` while this README claimed the adopted surface was covered.
+>    It wasn't — those are disjoint collections. Fixed.
+> 2. Assertion 3 originally compared object *identity* and reported a violation on
+>    `adopted-stylesheets.html`. That was a **false positive**. Identity differs because the
+>    MAIN-world proxy wraps the getter, not because anything was reassigned — and measurement showed
+>    `adoptedStyleSheets` is an `ObservableArray` whose setter writes *through*, so ADR 0001 item
+>    14's stated harm never occurs in Chromium. The assertion now measures liveness, the baseline
+>    entry was removed, and **ADR 0001 was corrected**.
+>
+> The second one is worth dwelling on: a harness can manufacture a violation as easily as it can miss
+> one, and a confidently-wrong gate costs real engineering time chasing a bug that isn't there.
+
+## Determinism is not optional
+
+Every capture launches its **own** browser context and closes it.
+
+Sharing one persistent context made the suite nondeterministic: two consecutive full runs failed on
+different fixtures — `late-injected-styles` + `css-variables`, then `shadow-dom-closed` — with no
+code change between them. State accumulates across 90+ page loads (per-site settings, caches,
+service-worker restarts) and leaks into whichever fixture runs next.
+
+Intermittent red is disqualifying for a blocking gate. It trains everyone to re-run until green,
+which is precisely how a real violation gets waved through. Isolation costs about 0.6 minutes and
+buys the only property that matters here: the same input always gives the same answer. Two
+consecutive runs now produce byte-identical results.
 
 ## Ownership is decided by node, never by name
 
@@ -69,7 +95,7 @@ right message.
 
 ## Current state
 
-34 passing, 61 skipped. Most skips are the byte-identical assertions on fixtures that still have
+34 passing, 61 skipped, in ~4.3 minutes. Most skips are the byte-identical assertions on fixtures that still have
 known violations: their serialized HTML cannot match until E2 lands, and pretending otherwise would
 be dishonest. They un-skip automatically as baseline entries are removed.
 

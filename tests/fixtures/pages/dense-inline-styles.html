@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Dense inline styles (count pressure)</title>
+<style>
+body{background:#fff;color:#111;font:14px system-ui;margin:0;padding:16px}
+#grid{display:grid;grid-template-columns:repeat(20,1fr);gap:1px}
+.cell{padding:3px 4px;font:11px ui-monospace;overflow:hidden;white-space:nowrap}
+</style></head>
+<body>
+<h1>Dense inline styles</h1>
+<p><strong>The E2 count case, and the one that decides the design.</strong>
+2,000 elements are present simultaneously, each carrying a page-authored <code>style</code>
+attribute. Nothing animates — the pressure is purely how many elements exist at once.</p>
+
+<p>This sits deliberately at the measured crossover. Blink indexes CSS rules by the
+<em>rightmost</em> compound selector, so per-element structural selectors (which must end in a tag
+or a page-authored class, because adding an id or class is the mutation the invariant forbids) all
+land in a single bucket: every candidate element then tests every rule. That is O(M&sup2;), measured
+at ~22ns per element&times;rule, and it costs that on <em>every</em> full style pass, not once.</p>
+
+<p>At M=2,000 the matching overhead alone was measured at ~89ms against
+<code>ARCHITECTURE.md</code> §9's 100ms budget — so this fixture is the line between "per-element
+selector emission works" and "it does not". The rest of the corpus cannot see this: its median is
+<strong>zero</strong> inline-styled elements and its previous maximum was 141.</p>
+
+<div id="grid"></div>
+
+<script>
+// 2000 = 100 rows x 20 cells. Built once, then left alone: no timers, no observers, so the
+// fixture is deterministic and the harness compares it strictly.
+const grid = document.getElementById('grid');
+const ROWS = 100, COLS = 20;
+const frag = document.createDocumentFragment();
+for (let r = 0; r < ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    // Page-authored inline style. Varied so the engine cannot collapse them into one override,
+    // which is what makes this a worst case rather than a best case for rule reuse.
+    const hue = (r * 7 + c * 13) % 360;
+    cell.setAttribute('style', `background: hsl(${hue} 65% ${92 - (r % 6)}%); color: #2${c % 10}${r % 10}`);
+    cell.textContent = `${r},${c}`;
+    frag.appendChild(cell);
+  }
+}
+grid.appendChild(frag);
+// Exposed so a benchmark can assert it is measuring what it thinks it is.
+window.__inlineStyledCount = grid.querySelectorAll('[style]').length;
+</script>
+</body>
+</html>

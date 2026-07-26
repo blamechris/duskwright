@@ -42,7 +42,9 @@
     {"file": "webgl-canvas.html", "cause": 4, "epics": ["E5"]},
 
     {"file": "virtualized-table.html", "cause": 6, "epics": ["E2", "E5"],
-     "note": "THE throughput case. 4000 rows x 6 inline-styled cells, re-rendered on scroll."},
+     "note": "Throughput CHURN case. Only ~141 inline-styled elements exist at once, but a 60-frame scroll creates ~8,400 of them (~17k/sec). Rate pressure, not count."},
+    {"file": "dense-inline-styles.html", "cause": 6, "epics": ["E2"],
+     "note": "Throughput COUNT case, and the fixture that decides the E2 design. 2,000 simultaneous inline-styled elements, static. Sits at the measured crossover where per-element selector emission stops fitting the ARCHITECTURE.md §9 budget: Blink buckets rules by rightmost compound, so purity-legal selectors all collide and matching goes O(M^2) at ~22ns per element x rule."},
 
     {"file": "coverage-partial.html", "epics": ["E6"],
      "note": "~1/3 of viewport left light — must be flagged."},

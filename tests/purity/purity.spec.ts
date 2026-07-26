@@ -1,10 +1,9 @@
 import {test, expect} from '@playwright/test';
-import type {BrowserContext} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
-import {capture, launchClean, launchWithExtension} from './harness';
+import {capture} from './harness';
 import {isViolation, describeViolation} from './ownership';
 import {attributableToExtension} from './diff';
 import {startFixtureServers} from '../fixtures/server.mjs';
@@ -31,21 +30,20 @@ const manifest = JSON.parse(
 // $comment: it is a ratchet, not an exclusion list. Entries may only be removed.
 const baseline = JSON.parse(
     readFileSync(join(HERE, 'known-violations.json'), 'utf8'),
-) as {fixtures: Record<string, string[]>; detachedAdoptedArray?: string[]};
+) as {fixtures: Record<string, string[]>};
 
 let servers: Awaited<ReturnType<typeof startFixtureServers>>;
-let treated: BrowserContext;
-let clean: BrowserContext;
+
+// Browser contexts are created per capture, not here — see launchContext() in harness.ts for
+// why sharing one made the suite nondeterministic.
+const TREATED = true;
+const CLEAN = false;
 
 test.beforeAll(async () => {
     servers = await startFixtureServers();
-    treated = await launchWithExtension();
-    clean = await launchClean();
 });
 
 test.afterAll(async () => {
-    await treated?.close();
-    await clean?.close();
     await servers?.close();
 });
 
@@ -66,8 +64,8 @@ test('the extension is actually loaded and theming', async () => {
     // weakening it. Rendered colour is the signal that survives the rewrite, because theming
     // still has to change what the user sees no matter how it is delivered.
     const url = `${servers.pagesOrigin}/static-plain.html`;
-    const withExt = await capture(treated, url, SETTLE_MS);
-    const withoutExt = await capture(clean, url, SETTLE_MS);
+    const withExt = await capture(TREATED, url, SETTLE_MS);
+    const withoutExt = await capture(CLEAN, url, SETTLE_MS);
 
     expect(withoutExt.computed.body, 'control fixture should render light').toContain('255, 255, 255');
     expect(
@@ -80,8 +78,8 @@ for (const entry of manifest.fixtures) {
     test.describe(entry.file, () => {
         test('produces no observable mutation of page-owned DOM', async () => {
             const url = `${servers.pagesOrigin}/${entry.file}`;
-            const after = await capture(treated, url, SETTLE_MS);
-            const before = await capture(clean, url, SETTLE_MS);
+            const after = await capture(TREATED, url, SETTLE_MS);
+            const before = await capture(CLEAN, url, SETTLE_MS);
 
             // Subtract what the page does to itself; the residue is the extension's doing.
             const residue = attributableToExtension(after.mutations, before.mutations, {
@@ -114,8 +112,8 @@ for (const entry of manifest.fixtures) {
                 'known-violating fixture: the serialized page cannot match until E2 lands',
             );
             const url = `${servers.pagesOrigin}/${entry.file}`;
-            const before = await capture(clean, url, SETTLE_MS);
-            const after = await capture(treated, url, SETTLE_MS);
+            const before = await capture(CLEAN, url, SETTLE_MS);
+            const after = await capture(TREATED, url, SETTLE_MS);
 
             // adoptedStyleSheets changes fire no MutationRecord, so stylesheet text is the
             // only surface that catches them. This is not redundant with the observer
@@ -135,24 +133,24 @@ for (const entry of manifest.fixtures) {
             expect(after.html, 'serialized page HTML changed').toBe(before.html);
         });
 
-        test('does not detach the page\'s adoptedStyleSheets array', async () => {
+        test('keeps the page\'s adoptedStyleSheets reference live', async () => {
             const url = `${servers.pagesOrigin}/${entry.file}`;
-            const after = await capture(treated, url, SETTLE_MS);
+            const after = await capture(TREATED, url, SETTLE_MS);
             test.skip(
-                after.stylesheets.pageArrayIntact === null,
+                after.stylesheets.pageArrayLive === null,
                 'fixture does not hold a reference to document.adoptedStyleSheets',
             );
-            // ADR 0001 item 14 / ADR 0002 C5: appending is allowed, reassigning is not.
-            // Upstream replaces the array wholesale, which detaches any reference the page
-            // was holding — invisible to both the observer and the HTML snapshot, which is
-            // why this needs its own assertion rather than riding on either of those.
-            const knownDetached = (baseline.detachedAdoptedArray ?? []).includes(entry.file);
+            // The real harm ADR 0001 item 14 warned about would be the page's handle going
+            // stale. Measured: it does not, because adoptedStyleSheets is an ObservableArray
+            // whose setter writes through — the correction is recorded in ADR 0001 itself.
+            //
+            // Asserted anyway, because if a future rewrite ever does strand the page's
+            // reference, nothing else in this suite would notice: no node moves, and no
+            // serialized state changes.
             expect(
-                after.stylesheets.pageArrayIntact,
-                knownDetached
-                    ? `${entry.file} no longer detaches the array. Good — remove it from detachedAdoptedArray in known-violations.json`
-                    : `document.adoptedStyleSheets was reassigned in ${entry.file}, detaching the page's reference`,
-            ).toBe(!knownDetached);
+                after.stylesheets.pageArrayLive,
+                `the page's adoptedStyleSheets reference no longer reflects the live list in ${entry.file}`,
+            ).toBe(true);
         });
     });
 }

@@ -45,29 +45,36 @@ export function createAdoptedStyleSheetOverride(node: Document | ShadowRoot): Ad
         });
     }
 
+    // Purity: mutate adoptedStyleSheets IN PLACE rather than assigning a fresh array.
+    //
+    // To be clear about what this does and does not buy, because ADR 0001 originally got it
+    // wrong: reassigning does NOT detach a reference the page is holding. adoptedStyleSheets
+    // is an ObservableArray whose setter writes through to the same backing object, so a held
+    // reference stays live — measured in Chromium, with and without this change, identical
+    // either way. The correction is recorded in ADR 0001 item 14 and ADR 0002 C5.
+    //
+    // In-place splicing is kept anyway because it is what ADR 0002 C5 mandates, it costs
+    // nothing, it matches the pattern index.ts already uses for our own sheet, and it does not
+    // depend on a write-through behaviour that is an implementation detail rather than a
+    // guarantee. It is a style preference, not a fix for observable harm.
     function injectSheet(sheet: CSSStyleSheet, override: CSSStyleSheet) {
-        const newSheets = isFirefox ? getAdoptedSheets(node) : [...node.adoptedStyleSheets];
-        const sheetIndex = newSheets.indexOf(sheet);
-        const overrideIndex = newSheets.indexOf(override);
+        const sheets = getAdoptedSheets(node);
+        const overrideIndex = sheets.indexOf(override);
         if (overrideIndex >= 0) {
-            newSheets.splice(overrideIndex, 1);
+            sheets.splice(overrideIndex, 1);
         }
-        newSheets.splice(sheetIndex + 1, 0, override);
-        if (!isFirefox) {
-            node.adoptedStyleSheets = newSheets;
-        }
+        // Recomputed after the removal above, which can shift the source sheet's position.
+        const sheetIndex = sheets.indexOf(sheet);
+        sheets.splice(sheetIndex + 1, 0, override);
     }
 
     function clear() {
-        const newSheets = isFirefox ? getAdoptedSheets(node) : [...node.adoptedStyleSheets];
-        for (let i = newSheets.length - 1; i >= 0; i--) {
-            const sheet = newSheets[i];
+        const sheets = getAdoptedSheets(node);
+        for (let i = sheets.length - 1; i >= 0; i--) {
+            const sheet = sheets[i];
             if (overrides.has(sheet)) {
-                newSheets.splice(i, 1);
+                sheets.splice(i, 1);
             }
-        }
-        if (!isFirefox && node.adoptedStyleSheets.length !== newSheets.length) {
-            node.adoptedStyleSheets = newSheets;
         }
         sourceSheets = new WeakSet();
         sourceDeclarations = new WeakSet();
