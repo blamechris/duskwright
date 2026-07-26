@@ -1,0 +1,50 @@
+name: Task
+description: A unit of work under an epic
+body:
+  - type: input
+    id: epic
+    attributes:
+      label: Epic
+      description: The parent epic issue.
+      placeholder: "Part of #N (E2 — Purity invariant)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: What needs to be built, and enough context to act without the originating session.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete and checkable. "Works well" is not a criterion.
+      value: |
+        - [ ]
+        - [ ]
+        - [ ] Purity harness green
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Model tier
+      description: >-
+        Strong tier for anything where being wrong is invisible — purity, selector generation,
+        coverage heuristics, architecture. Cheap tier where being wrong makes CI red.
+      options:
+        - Cheap — mechanical, spec-driven, CI catches errors
+        - Strong — purity, selector strategy, heuristics, or architecture
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Ordering constraints, related ADRs, upstream files involved.

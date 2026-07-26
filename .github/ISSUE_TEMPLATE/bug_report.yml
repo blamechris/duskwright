@@ -1,0 +1,66 @@
+name: Bug report
+description: Something is broken in the extension
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If a **document was altered** — a spreadsheet, doc, or editor kept the theming after you
+        disabled the extension, or a colleague saw it — say so in the title. That is a purity
+        violation and the most serious class of bug this project has.
+
+  - type: input
+    id: site
+    attributes:
+      label: Site
+      placeholder: https://docs.google.com/spreadsheets/...
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of failure
+      options:
+        - Page not themed at all
+        - Page themed partially (some areas still light)
+        - Page themed wrongly (unreadable, wrong colors, media inverted)
+        - Document was altered — theming persisted after disabling
+        - A picker rule stopped matching
+        - Performance (slow load, flashing)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+  - type: input
+    id: chrome
+    attributes:
+      label: Chrome version
+
+  - type: checkboxes
+    id: upstream
+    attributes:
+      label: Checked upstream
+      options:
+        - label: Dark Reader has the same problem on this site (if you were able to check)

@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Repo hygiene. Runs from day one, before any source exists.
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Required files are present
+        run: |
+          missing=0
+          for f in LICENSE NOTICE README.md CLAUDE.md ARCHITECTURE.md; do
+            if [ ! -f "$f" ]; then echo "::error::missing required file: $f"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Upstream attribution is retained
+        run: |
+          grep -q "Dark Reader Ltd." LICENSE || {
+            echo "::error::LICENSE must retain upstream's copyright (MIT fork requirement)"; exit 1; }
+          grep -q "darkreader/darkreader" README.md || {
+            echo "::error::README must state plainly that this is a fork and link upstream"; exit 1; }
+
+      - name: No AI or agent attribution
+        run: |
+          if grep -rniE "co-authored-by:[[:space:]]*claude|generated with \[?claude" \
+               --include="*.md" --include="*.yml" --include="*.ts" --include="*.js" .; then
+            echo "::error::attribution footer found — see CLAUDE.md"; exit 1
+          fi
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -f package.json ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::no package.json yet (pre-E1) — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run lint
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -f package.json ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::no package.json yet (pre-E1) — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run build
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -f package.json ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::no package.json yet (pre-E1) — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npm test
+
+  # THE BLOCKING GATE. See CLAUDE.md and docs/adr/0001.
+  # Never add exclusions here to make a PR pass. If it is red, the code is wrong.
+  purity:
+    name: purity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -d tests/purity ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::purity harness lands in E2 — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run test:purity

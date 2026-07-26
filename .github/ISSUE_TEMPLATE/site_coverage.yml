@@ -1,0 +1,50 @@
+name: Site not themed well
+description: A specific site the engine handles badly
+labels: ["site-coverage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sites that the engine misses are expected — the point of the picker and coverage detection
+        is that we stop failing *silently*. This template captures the site so it can become a
+        fixture in the corpus.
+
+  - type: input
+    id: url
+    attributes:
+      label: URL
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cause
+    attributes:
+      label: Likely cause
+      description: See ARCHITECTURE.md §1. Guess if unsure — triage will confirm.
+      options:
+        - Cross-origin stylesheets (CORS)
+        - Closed shadow roots
+        - Cross-origin or sandboxed iframes
+        - Canvas / WebGL rendering (no DOM text — picker territory)
+        - Strict CSP style-src
+        - Runtime inline styles (repaints outrun the observer)
+        - CSS-in-JS
+        - Site's own dark mode conflicting with ours
+        - Restricted page (chrome://, Web Store)
+        - Unknown
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What looks wrong
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: workaround
+    attributes:
+      label: Workarounds tried
+      options:
+        - label: The picker produced a rule that fixes it
+        - label: Coverage detection flagged the page as partially themed
+        - label: Neither — it silently looked fine but was not

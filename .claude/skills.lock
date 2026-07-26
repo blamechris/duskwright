@@ -1,0 +1,65 @@
+{
+  "registry": "blamechris/skill-templates",
+  "skills": {
+    "agent-review": {
+      "hash": "a10ef75",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "create-issue": {
+      "hash": "12b011f",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "create-pr": {
+      "hash": "12b011f",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "full-review": {
+      "hash": "1e5962e",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "skill": {
+      "hash": "ea888eb",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "tiered-delegation": {
+      "hash": "0389e93",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    }
+  }
+}

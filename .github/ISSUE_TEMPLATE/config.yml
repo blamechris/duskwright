@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Upstream Dark Reader issue
+    url: https://github.com/darkreader/darkreader/issues
+    about: >-
+      If a site is themed badly by the engine itself (not by Duskwright's picker, coverage
+      detection, or rule engine), it is likely an upstream engine or site-fix issue. Fixing it
+      there benefits everyone and flows back to us through the scheduled fixes sync.
