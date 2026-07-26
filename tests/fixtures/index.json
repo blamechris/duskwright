@@ -6,7 +6,7 @@
     "'purityClass' maps to the six fixture classes ARCHITECTURE.md §2 requires of the purity harness.",
     "'cause' maps to the nine reasons theming fails in ARCHITECTURE.md §1.",
     "'epics' lists the epics that assert against this fixture.",
-    "Coverage is asserted by tests/fixtures/coverage.test.mjs — if a §1 cause or §2 class ends up",
+    "Coverage is asserted by tests/unit/fixtures/corpus.tests.ts — if a §1 cause or §2 class ends up",
     "with no fixture, that test fails rather than the gap going unnoticed."
   ],
   "origins": {"pages": 8788, "crossOrigin": 8789},

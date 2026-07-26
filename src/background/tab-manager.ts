@@ -1,6 +1,7 @@
 import {canInjectScript} from '../background/utils/extension-api';
 import type {MessageBGtoCS, MessageCStoBG, MessageUItoBG} from '../definitions';
 import {MessageTypeCStoBG, MessageTypeBGtoCS, MessageTypeUItoBG} from '../utils/message';
+import {HOMEPAGE_URL} from '../utils/links';
 import {isFirefox} from '../utils/platform';
 import {StateManager} from '../utils/state-manager';
 import {getActiveTab, queryTabs} from '../utils/tabs';
@@ -266,7 +267,7 @@ export default class TabManager {
             if (themeMessageTypes.includes(message.type)) {
                 IconManager.setIcon({tabId, isActive: true, colorScheme: message.data?.theme?.mode ? 'dark' : 'light'});
             } else if (message.type === MessageTypeBGtoCS.CLEAN_UP) {
-                const isActive = TabManager.tabs[tabId]?.[0]?.url?.startsWith('https://darkreader.org/');
+                const isActive = TabManager.tabs[tabId]?.[0]?.url?.startsWith(HOMEPAGE_URL);
                 IconManager.setIcon({tabId, isActive});
             }
         }

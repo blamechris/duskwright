@@ -20,7 +20,7 @@ function html(platform, title, hasLoader, hasStyleSheet, compatibility) {
             '        <link rel="stylesheet" type="text/css" href="style.css" />',
             '        <link',
             '            rel="shortcut icon"',
-            '            href="../assets/images/darkreader-icon-256x256.png"',
+            '            href="../../icons/dw_128.png"',
             '        />',
         ] : null,
         '        <script src="index.js" defer></script>',

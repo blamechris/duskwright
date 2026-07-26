@@ -129,6 +129,12 @@ export default class Newsmaker {
         if (__TEST__) {
             return newsForTesting;
         }
+        // Duskwright has no news feed. NEWS_URL is empty (see links.ts), and without this
+        // guard fetch('') resolves against the extension's own origin and fails on a 4-hour
+        // loop for every install — fetchNews defaults to true.
+        if (!NEWS_URL) {
+            return null;
+        }
         try {
             const response = await fetch(NEWS_URL, {cache: 'no-cache'});
             const $news: Array<Omit<News, 'read' | 'url'> & {date: string}> = await response.json();
