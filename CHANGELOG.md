@@ -1,3 +1,8 @@
+> **This is Dark Reader's changelog, not Duskwright's.**
+> It is retained from upstream so the file keeps merging cleanly on each sync, and as a
+> record of the engine's history. Duskwright has not made a release yet; when it does, its
+> notes will live in GitHub Releases.
+
 # 4.9.129 (July 14, 2026)
 
 - Improved performance when handling variables references.

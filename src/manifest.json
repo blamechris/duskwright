@@ -1,22 +1,22 @@
 {
     "manifest_version": 2,
-    "name": "Dark Reader",
-    "version": "4.9.129",
-    "author": "Alexander Shutau",
+    "name": "Duskwright",
+    "version": "0.1.0",
+    "author": "Chris Bowen",
     "description": "__MSG_extension_description__",
     "default_locale": "en",
     "browser_action": {
-        "default_title": "Dark Reader",
+        "default_title": "Duskwright",
         "default_icon": {
-            "38": "icons/dr_active_38.png",
-            "19": "icons/dr_active_19.png"
+            "38": "icons/dw_active_38.png",
+            "19": "icons/dw_active_19.png"
         },
         "default_popup": "ui/popup/index.html"
     },
     "icons": {
-        "16": "icons/dr_16.png",
-        "48": "icons/dr_48.png",
-        "128": "icons/dr_128.png"
+        "16": "icons/dw_16.png",
+        "48": "icons/dw_48.png",
+        "128": "icons/dw_128.png"
     },
     "background": {
         "persistent": true,

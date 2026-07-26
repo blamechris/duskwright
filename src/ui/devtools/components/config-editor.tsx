@@ -124,7 +124,7 @@ export function ConfigEditor(props: ConfigEditorProps): Malevic.Child {
             <p class="description">
                 Read about this tool <strong><a href={DEVTOOLS_DOCS_URL} target="_blank" rel="noopener noreferrer">here</a></strong>.
                 If a <strong>popular</strong> website looks incorrect
-                e-mail to <strong>support@darkreader.org</strong>
+                an issue at <strong>github.com/blamechris/duskwright/issues</strong>
             </p>
             {dialog}
         </div>

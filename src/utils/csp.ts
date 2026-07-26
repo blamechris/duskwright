@@ -6,7 +6,10 @@ enum CSP {
 }
 
 function check() {
-    const prefixed = [BLOG_URL, PRIVACY_URL, UNINSTALL_URL, HELP_URL];
+    // An empty URL means the feature is disabled and no navigation ever happens, so it
+    // trivially satisfies the invariant. Duskwright disables upstream's uninstall survey
+    // this way — see links.ts.
+    const prefixed = [BLOG_URL, PRIVACY_URL, UNINSTALL_URL, HELP_URL].filter(Boolean);
     if (prefixed.some((url) => !url.startsWith(HOMEPAGE_URL))) {
         throw new Error('Some navigation URL is not within main site!');
     }

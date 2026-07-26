@@ -16,7 +16,7 @@
     var text = document.createTextNode([
         'Your Google Chrome (or Chromium) version ' + version + ' is out of date.',
         'In order to use this extension update your Google Chrome.',
-        'If you cannot update, install the old Dark Reader version, which works for at least Chrome 49, from '
+        'If you cannot update, install an older Duskwright version, which works for at least Chrome 49, from '
     ].join(' '));
     var link = document.createElement('a');
     link.href = 'https://chrome.google.com/webstore/detail/oibheihomapbjogmoabgfbkchjchpdfp';

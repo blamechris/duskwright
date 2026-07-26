@@ -104,17 +104,16 @@ function getParams(args) {
         '--chrome-mv2': PLATFORM.CHROMIUM_MV2,
         '--chrome-mv3': PLATFORM.CHROMIUM_MV3,
         '--chrome-plus': PLATFORM.CHROMIUM_MV2_PLUS,
-        '--firefox': PLATFORM.FIREFOX_MV2,
-        '--firefox-mv2': PLATFORM.FIREFOX_MV2,
-        '--firefox-mv3': PLATFORM.FIREFOX_MV3,
-        '--thunderbird': PLATFORM.THUNDERBIRD,
     };
+    // Duskwright is Chromium-only. Firefox MV2/MV3 and Thunderbird targets are stripped here,
+    // at the build boundary, rather than in src/ — the __FIREFOX_MV2__/__THUNDERBIRD__ compile
+    // -time flags stay in the engine and simply resolve false, because removing them would
+    // touch dozens of upstream files and wreck the fixes-config merges E9 depends on.
+    // See docs/adr/0003.
     const platforms = {
         [PLATFORM.CHROMIUM_MV2]: false,
         [PLATFORM.CHROMIUM_MV2_PLUS]: false,
         [PLATFORM.CHROMIUM_MV3]: false,
-        [PLATFORM.FIREFOX_MV2]: false,
-        [PLATFORM.THUNDERBIRD]: false,
     };
     let allPlatforms = true;
     for (const arg of args) {
@@ -129,12 +128,6 @@ function getParams(args) {
     }
     if (allPlatforms) {
         Object.keys(platforms).forEach((platform) => platforms[platform] = true);
-    }
-
-    // TODO(Anton): remove me
-    if (platforms[PLATFORM.FIREFOX_MV3]) {
-        platforms[PLATFORM.FIREFOX_MV3] = false;
-        console.log('Firefox MV3 build is not supported yet');
     }
 
     if (!pathExistsSync('./src/plus/')) {

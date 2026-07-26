@@ -55,7 +55,7 @@ const extension = Extension.start();
 const welcome = `  /''''\\
  (0)==(0)
 /__||||__\\
-Welcome to Dark Reader!`;
+Welcome to Duskwright!`;
 console.log(welcome);
 
 declare const __DEBUG__: boolean;
@@ -133,7 +133,11 @@ if (__WATCH__) {
         }
     });
 
-    chrome.runtime.setUninstallURL(UNINSTALL_URL);
+    // Duskwright registers no uninstall URL, so uninstalling makes no outbound request.
+    // Upstream sent users to a survey page; that is a network call we do not make.
+    if (UNINSTALL_URL) {
+        chrome.runtime.setUninstallURL(UNINSTALL_URL);
+    }
 }
 
 if (__TEST__) {

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 128" role="img" aria-label="Duskwright">
+    <!--
+      Duskwright wordmark. The crescent repeats the extension icon so the popup, options
+      page, and toolbar all read as one thing. Set in a system stack rather than outlined
+      paths: it stays legible when scaled, and it is unambiguously our own artwork.
+    -->
+    <g fill="none" fill-rule="evenodd">
+        <!-- crescent: a disc with an offset disc knocked out of it -->
+        <mask id="dw-crescent">
+            <rect width="1280" height="128" fill="#000"/>
+            <circle cx="52" cy="64" r="42" fill="#fff"/>
+            <circle cx="70" cy="54" r="38" fill="#000"/>
+        </mask>
+        <rect width="128" height="128" fill="#E8E0D0" mask="url(#dw-crescent)"/>
+        <text x="120" y="64"
+              dominant-baseline="central"
+              font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+              font-size="76"
+              font-weight="600"
+              letter-spacing="-1.5"
+              fill="#E8E0D0">Duskwright</text>
+    </g>
+</svg>

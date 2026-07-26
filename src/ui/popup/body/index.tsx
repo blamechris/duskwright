@@ -23,7 +23,7 @@ function Logo() {
             target="_blank"
             rel="noopener noreferrer"
         >
-            Dark Reader
+            Duskwright
         </a>
     );
 }
@@ -110,8 +110,7 @@ function DonateGroup() {
             years = Math.max(10, years);
             birthdayMessageSpec = (
                 <span>
-                    {birthdayMessage.startsWith('Dark Reader') ? <strong class="birthday-message-darkreader">Dark Reader</strong> : null}
-                    {birthdayMessage.substring(birthdayMessage.startsWith('Dark Reader') ? 11 : 0, index10)}
+                    {birthdayMessage.substring(0, index10)}
                     <a href={`${HOMEPAGE_URL}/timeline/`} target="_blank" rel="noopener noreferrer">
                         {`${years}${birthdayMessage.substring(index10 + 2, indexDot)}`}
                     </a>
