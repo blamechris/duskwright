@@ -1,5 +1,18 @@
 # Agent Kickoff Prompt
 
+> **Historical record — do not act on this document.** This is the original brief that bootstrapped the
+> project, kept verbatim for provenance. Parts of it are now stale:
+>
+> - The working name **Umbra** was taken on the Chrome Web Store (as were Penumbra, Nocturne, and Shade).
+>   The project is **Duskwright**. Phase 0's naming step is resolved — do not redo it.
+> - Phase 0 and Phase 1 are complete: the repo is configured, skills are onboarded, `CLAUDE.md` exists,
+>   the upstream purity audit is written up in [`adr/0001`](adr/0001-upstream-purity-audit.md), and the
+>   epic board is populated.
+> - `ARCHITECTURE.md`'s description of the upstream mutation surface turned out to be wrong in an
+>   important way — see [`adr/0002`](adr/0002-architecture-doc-corrections.md).
+>
+> **A new session should read [`../CLAUDE.md`](../CLAUDE.md) first, not this file.**
+
 > Paste everything below the line into a fresh agent session started in the empty project directory.
 > `ARCHITECTURE.md` should be dropped into that directory first — the prompt assumes it is there.
 

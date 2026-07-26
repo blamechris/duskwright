@@ -22,7 +22,11 @@ call this the **purity invariant**, and it is enforced by a Playwright suite tha
 every fixture page, the page's serialized HTML, its stylesheet text, and a MutationObserver log
 recorded from before the extension ran must all come back clean.
 
-It is a guarantee, not a promise. See [`ARCHITECTURE.md`](ARCHITECTURE.md) §2.
+It is a guarantee, not a promise. The invariant is stated in [`ARCHITECTURE.md`](ARCHITECTURE.md) §2;
+what the forked engine actually does today, and what has to change to get there, is inventoried in
+[ADR 0001](docs/adr/0001-upstream-purity-audit.md). Where auditing the real source contradicted the
+design doc, [ADR 0002](docs/adr/0002-architecture-doc-corrections.md) records the correction rather
+than quietly resolving it.
 
 ### 2. It tells you when it didn't work
 

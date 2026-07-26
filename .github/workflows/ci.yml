@@ -41,19 +41,22 @@ jobs:
           # Match attribution as it actually appears — a trailer or footer at the start of a
           # line — not prose that merely names it. The installed skills legitimately contain
           # sentences forbidding "Co-Authored-By: Claude", and those must not trip this gate.
-          if grep -rniE '^[[:space:]]*(co-authored-by:[[:space:]]*claude|(:robot:|🤖[[:space:]]*)?generated with \[?claude)' \
+          AGENTS='claude|anthropic|copilot|codex|chatgpt|gpt-[0-9]|gemini|cursor|devin|aider'
+          if grep -rniE "^[[:space:]]*(co-authored-by:[[:space:]]*($AGENTS)|(:robot:|🤖)?[[:space:]]*generated (with|by) \[?($AGENTS))" \
                --include="*.md" --include="*.yml" --include="*.ts" --include="*.js" \
                --exclude-dir=.git --exclude-dir=.claude --exclude-dir=.codex --exclude-dir=.gemini .; then
             echo "::error::attribution footer found in tracked content — see CLAUDE.md"; exit 1
           fi
 
-      - name: No AI attribution in commit trailers
+      - name: No attribution trailers in commits
         if: github.event_name == 'pull_request'
         run: |
           # The place a Co-Authored-By trailer actually lands. Scan only this PR's commits.
+          # The policy bans the trailer outright — no Claude, no other agent, no human
+          # co-author — so this matches any Co-Authored-By, not a name list.
           git fetch --quiet origin "${{ github.base_ref }}"
           if git log "origin/${{ github.base_ref }}..HEAD" --format='%B' \
-               | grep -niE '^[[:space:]]*co-authored-by:[[:space:]]*claude'; then
+               | grep -niE '^[[:space:]]*co-authored-by:'; then
             echo "::error::Co-Authored-By trailer found in a commit message — see CLAUDE.md"; exit 1
           fi
 
