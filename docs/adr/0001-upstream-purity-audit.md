@@ -105,7 +105,7 @@ disappears entirely if we drop the MAIN-world proxy (see ADR 0002).
 |---|---|---|
 | 10 | `src/inject/dynamic-theme/index.ts:600-606` | Appends `<meta name="darkreader-lock">` to `document.head`, removes it in a microtask |
 | 11 | `src/inject/dynamic-theme/index.ts:252` | MV2 path: inserts a `<script class="darkreader--proxy">` into `document.head`, then removes it |
-| 12 | `src/inject/dynamic-theme/style-manager.ts:240-250` + `injection.ts` | Inserts `<style class="darkreader--sync">` siblings next to each page-owned `<style>`/`<link>`, in page DOM — **not** inside a shadow root |
+| 12 | `src/inject/dynamic-theme/style-manager.ts:230-238` (`insertStyle()`, the `insertBefore` at `:233`) + `injection.ts` | Inserts `<style class="darkreader--sync">` siblings next to each page-owned `<style>`/`<link>`, in page DOM — **not** inside a shadow root. The element itself is built in `createSyncStyle()` at `:240-250`, which is *not* the violation — construction and class-tagging of our own element is permitted; the page-DOM insertion is the problem |
 
 "Removed in a microtask" is not invisible: a MutationObserver registered by the page fires on both
 the insertion and the removal. Item 12 is not transient at all — those nodes live in the page's

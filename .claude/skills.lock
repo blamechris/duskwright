@@ -11,6 +11,16 @@
         "codex"
       ]
     },
+    "check-pr": {
+      "hash": "cc062bc",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
     "create-issue": {
       "hash": "12b011f",
       "installed": "2026-07-25",
@@ -23,6 +33,16 @@
     },
     "create-pr": {
       "hash": "12b011f",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "fix-ci": {
+      "hash": "3768ea6",
       "installed": "2026-07-25",
       "profileHash": "1a0dd88",
       "targets": [
