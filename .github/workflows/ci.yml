@@ -62,10 +62,19 @@ jobs:
           BASE="origin/${{ github.base_ref }}"
           git fetch --quiet origin "${{ github.base_ref }}"
 
+          # Scan the PR branch tip, NOT HEAD. On a pull_request event actions/checkout checks
+          # out GitHub's synthetic merge commit, whose FIRST parent is the base branch — so
+          # --first-parent from HEAD walks the base side and inspects none of our commits.
+          # It reported "scanning 1 commit" and passed while examining nothing.
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          if ! git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null; then
+            echo "::error::PR head $HEAD_SHA is not present locally — nothing was scanned"; exit 1
+          fi
+
           # Resolve the range explicitly and FAIL if we cannot. Piping git straight into
           # grep hides git's own failure: the pipeline takes grep's status, "no match" is
           # exit 1, and the `if` reads that as clean. A gate that cannot fail is not a gate.
-          if ! MERGE_BASE=$(git merge-base "$BASE" HEAD 2>/dev/null); then
+          if ! MERGE_BASE=$(git merge-base "$BASE" "$HEAD_SHA" 2>/dev/null); then
             echo "::error::cannot resolve $BASE — the commit range was not scanned. \
           This check must not pass without inspecting history (is fetch-depth 0?)."
             exit 1
@@ -76,13 +85,14 @@ jobs:
           # whole history, so we scan what WE authored. Upstream's contributors legitimately
           # use Co-authored-by trailers; the policy governs our commits, and rewriting an
           # imported history to satisfy it would be both absurd and dishonest.
-          COMMITS=$(git rev-list --count --first-parent "$MERGE_BASE..HEAD")
-          echo "scanning $COMMITS first-parent commit(s) from $MERGE_BASE to HEAD"
+          COMMITS=$(git rev-list --count --first-parent "$MERGE_BASE..$HEAD_SHA")
+          echo "scanning $COMMITS first-parent commit(s) from $MERGE_BASE to $HEAD_SHA"
+          git log --first-parent --oneline "$MERGE_BASE..$HEAD_SHA" | sed 's/^/  /'
           if [ "$COMMITS" -eq 0 ]; then
             echo "::error::resolved an empty commit range — refusing to report clean"; exit 1
           fi
 
-          TRAILERS=$(git log --first-parent "$MERGE_BASE..HEAD" --format='%B' \
+          TRAILERS=$(git log --first-parent "$MERGE_BASE..$HEAD_SHA" --format='%B' \
                        | grep -niE '^[[:space:]]*co-authored-by:' || true)
           if [ -n "$TRAILERS" ]; then
             echo "$TRAILERS"
