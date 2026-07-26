@@ -13,12 +13,21 @@ npm run test:purity
 1. **No observable mutation of page-owned DOM** — a `MutationObserver` installed at
    `document_start`, before any page script and before the extension's content script runs.
 2. **Page-owned HTML and stylesheet text byte-identical** — against a control run in a clean
-   browser.
+   browser. Covers both `document.styleSheets` and `document.adoptedStyleSheets`, which are
+   **disjoint collections**: adopted constructed sheets do not appear in `document.styleSheets`.
+3. **The page's `adoptedStyleSheets` array is not detached** — ADR 0001 item 14.
 
-Neither is redundant. The observer catches mutations that are **reverted before any snapshot** —
-ADR 0002 C4, and three of ADR 0001's fourteen sites are exactly that. The stylesheet comparison
-catches `adoptedStyleSheets` changes, which fire **no** `MutationRecord` at all. Each sees what the
-other structurally cannot.
+None is redundant. The observer catches mutations **reverted before any snapshot** (ADR 0002 C4 —
+three of the fourteen sites are exactly that). The stylesheet comparison catches `adoptedStyleSheets`
+content changes, which fire **no** `MutationRecord` at all. And the third catches wholesale array
+reassignment, which is invisible to *both* of the others: the sheets' contents are unchanged and no
+DOM node moved, but any reference the page was holding is now detached.
+
+> An earlier version of this harness read only `document.styleSheets` while this README claimed the
+> adopted surface was covered. It wasn't — and adding assertion 3 immediately found a real violation
+> the harness had been structurally unable to see. Recorded here because a gate that doesn't check
+> what it advertises is the exact thing this suite exists to prevent, and it happened *in the suite
+> itself*.
 
 ## Ownership is decided by node, never by name
 
@@ -60,7 +69,7 @@ right message.
 
 ## Current state
 
-33 passing, 31 skipped. The skips are the byte-identical assertions on fixtures that still have
+34 passing, 61 skipped. Most skips are the byte-identical assertions on fixtures that still have
 known violations: their serialized HTML cannot match until E2 lands, and pretending otherwise would
 be dishonest. They un-skip automatically as baseline entries are removed.
 
@@ -70,6 +79,12 @@ Two tests exist purely to stop the harness being vacuous:
 - **`the extension is actually loaded and theming`** — if the extension fails to load, every other
   assertion passes trivially and the harness reports a perfect score while testing nothing. This is
   the single most important test in the file.
+
+  It asserts a **computed-colour change**, not a mutation count. Counting mutations was the first
+  version and it was self-defeating: it would have started failing the moment E2 succeeded and the
+  mutations stopped — the harness's most important test, guaranteed to break precisely when the
+  project works, and then "fixed" by weakening it. Rendered colour survives the rewrite, because
+  theming still has to change what the user sees however it is delivered.
 
 ## Known gaps
 

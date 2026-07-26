@@ -31,7 +31,7 @@ const manifest = JSON.parse(
 // $comment: it is a ratchet, not an exclusion list. Entries may only be removed.
 const baseline = JSON.parse(
     readFileSync(join(HERE, 'known-violations.json'), 'utf8'),
-) as {fixtures: Record<string, string[]>};
+) as {fixtures: Record<string, string[]>; detachedAdoptedArray?: string[]};
 
 let servers: Awaited<ReturnType<typeof startFixtureServers>>;
 let treated: BrowserContext;
@@ -59,14 +59,21 @@ test('the extension is actually loaded and theming', async () => {
     // Without this, every other assertion below passes trivially if the extension fails to
     // load — a completely inert harness reporting a perfect score. This is the single most
     // important test in the file.
+    //
+    // It deliberately does NOT count mutations. That was the first version, and it would have
+    // started failing the moment E2 succeeded and the mutations stopped: the harness's most
+    // important test, guaranteed to break exactly when the project works, and then "fixed" by
+    // weakening it. Rendered colour is the signal that survives the rewrite, because theming
+    // still has to change what the user sees no matter how it is delivered.
     const url = `${servers.pagesOrigin}/static-plain.html`;
     const withExt = await capture(treated, url, SETTLE_MS);
     const withoutExt = await capture(clean, url, SETTLE_MS);
 
+    expect(withoutExt.computed.body, 'control fixture should render light').toContain('255, 255, 255');
     expect(
-        withExt.mutations.length,
-        'the extension produced no mutations at all — is it loaded?',
-    ).toBeGreaterThan(withoutExt.mutations.length);
+        withExt.computed.body,
+        `the extension changed nothing on screen — is it loaded? (clean=${withoutExt.computed.body})`,
+    ).not.toBe(withoutExt.computed.body);
 });
 
 for (const entry of manifest.fixtures) {
@@ -113,8 +120,39 @@ for (const entry of manifest.fixtures) {
             // adoptedStyleSheets changes fire no MutationRecord, so stylesheet text is the
             // only surface that catches them. This is not redundant with the observer
             // assertion — each catches what the other structurally cannot.
-            expect(after.stylesheets, 'page-owned stylesheet text changed').toBe(before.stylesheets);
+            expect(after.stylesheets.documentSheets, 'page-owned stylesheet text changed')
+                .toBe(before.stylesheets.documentSheets);
+
+            // Subset, not equality: §2 permits appending OUR sheet, so extra entries are
+            // fine. Every sheet the page adopted must still be present and unchanged.
+            for (const sheet of before.stylesheets.adopted) {
+                expect(
+                    after.stylesheets.adopted,
+                    'a stylesheet the page adopted was modified or removed',
+                ).toContain(sheet);
+            }
+
             expect(after.html, 'serialized page HTML changed').toBe(before.html);
+        });
+
+        test('does not detach the page\'s adoptedStyleSheets array', async () => {
+            const url = `${servers.pagesOrigin}/${entry.file}`;
+            const after = await capture(treated, url, SETTLE_MS);
+            test.skip(
+                after.stylesheets.pageArrayIntact === null,
+                'fixture does not hold a reference to document.adoptedStyleSheets',
+            );
+            // ADR 0001 item 14 / ADR 0002 C5: appending is allowed, reassigning is not.
+            // Upstream replaces the array wholesale, which detaches any reference the page
+            // was holding — invisible to both the observer and the HTML snapshot, which is
+            // why this needs its own assertion rather than riding on either of those.
+            const knownDetached = (baseline.detachedAdoptedArray ?? []).includes(entry.file);
+            expect(
+                after.stylesheets.pageArrayIntact,
+                knownDetached
+                    ? `${entry.file} no longer detaches the array. Good — remove it from detachedAdoptedArray in known-violations.json`
+                    : `document.adoptedStyleSheets was reassigned in ${entry.file}, detaching the page's reference`,
+            ).toBe(!knownDetached);
         });
     });
 }

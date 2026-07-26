@@ -48,31 +48,78 @@ window.__purityObserver.observe(document, {
 });
 `;
 
-/** Serialize the page's own stylesheet text — the surface a MutationObserver cannot see. */
+/**
+ * Serialize the page's stylesheet text — the surface a MutationObserver cannot see.
+ *
+ * Covers BOTH `document.styleSheets` (from <style>/<link>) and `document.adoptedStyleSheets`.
+ * They are disjoint collections: adopted constructed sheets do NOT appear in
+ * `document.styleSheets`. An earlier version of this harness read only the former while its
+ * README claimed the adopted surface was covered — the gate did not check what it advertised,
+ * which is the failure mode this whole suite exists to prevent.
+ */
 const READ_STYLESHEETS = `
 (() => {
-    const out = [];
-    for (const sheet of Array.from(document.styleSheets)) {
-        const owner = sheet.ownerNode;
-        // Skip sheets belonging to nodes we created; everything else is the page's.
-        if (owner && owner.nodeType === 1 && (
-            owner.classList?.contains('darkreader') ||
-            owner.classList?.contains('duskwright') ||
-            owner.id === 'duskwright-theme'
-        )) {
-            continue;
-        }
-        let text;
+    const isOurNode = (owner) => Boolean(owner && owner.nodeType === 1 && (
+        owner.classList?.contains('darkreader') ||
+        owner.classList?.contains('duskwright') ||
+        owner.id === 'duskwright-theme'
+    ));
+
+    const textOf = (sheet) => {
         try {
-            text = Array.from(sheet.cssRules).map((r) => r.cssText).join('\\n');
+            return Array.from(sheet.cssRules).map((r) => r.cssText).join('\\n');
         } catch (err) {
             // Cross-origin sheet — unreadable by us and by the extension alike. Record the
             // fact rather than skipping, so a sheet appearing or vanishing still shows up.
-            text = '(cors-restricted)';
+            return '(cors-restricted)';
         }
-        out.push((owner && owner.nodeName ? owner.nodeName : '?') + '::' + text);
+    };
+
+    const documentSheets = [];
+    for (const sheet of Array.from(document.styleSheets)) {
+        if (isOurNode(sheet.ownerNode)) {
+            continue;
+        }
+        documentSheets.push((sheet.ownerNode?.nodeName ?? '?') + '::' + textOf(sheet));
     }
-    return out.join('\\n---\\n');
+
+    // Adopted sheets have no owner node, so ownership cannot be read off them. They are
+    // compared as a multiset subset instead: §2 permits us to APPEND ours, so extra entries
+    // are fine, but every sheet the page adopted must still be present and unchanged.
+    const adopted = Array.from(document.adoptedStyleSheets ?? []).map(textOf);
+
+    return {
+        documentSheets: documentSheets.join('\\n---\\n'),
+        adopted,
+        // ADR 0001 item 14: upstream REASSIGNS node.adoptedStyleSheets rather than appending,
+        // which detaches any array reference the page was holding. Fixtures that keep one
+        // expose it here so the harness can catch that directly.
+        pageArrayIntact: window.__pageAdoptedRef === undefined
+            ? null
+            : window.__pageAdoptedRef === document.adoptedStyleSheets,
+    };
+})()
+`;
+
+/**
+ * Rendered colours, used to prove the extension is actually doing something.
+ *
+ * Counting mutations was the obvious liveness signal and it is exactly wrong: it would start
+ * failing the moment E2 succeeds and the mutations stop — the harness's most important test,
+ * guaranteed to break precisely when the project works, and then "fixed" by weakening it.
+ * Computed style keeps working no matter how the theming is delivered.
+ */
+const READ_COMPUTED = `
+(() => {
+    const probe = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) {
+            return 'absent';
+        }
+        const s = getComputedStyle(el);
+        return s.backgroundColor + ' / ' + s.color;
+    };
+    return {body: probe('body'), html: probe('html')};
 })()
 `;
 
@@ -85,9 +132,18 @@ const STRIP_OURS = `
 })()
 `;
 
+export interface StylesheetState {
+    documentSheets: string;
+    adopted: string[];
+    /** null when the fixture doesn't hold a reference; false means it was detached. */
+    pageArrayIntact: boolean | null;
+}
+
 export interface PuritySnapshot {
     html: string;
-    stylesheets: string;
+    stylesheets: StylesheetState;
+    /** Computed styles of a few probe elements — proof the extension is doing anything. */
+    computed: Record<string, string>;
     mutations: MutationDesc[];
 }
 
@@ -122,9 +178,10 @@ export async function capture(context: BrowserContext, url: string, settleMs: nu
     const mutations: MutationDesc[] = await page.evaluate('window.__purityLog ?? []') as MutationDesc[];
     await page.evaluate('window.__purityObserver && window.__purityObserver.disconnect()');
 
-    const stylesheets = await page.evaluate(READ_STYLESHEETS) as string;
+    const stylesheets = await page.evaluate(READ_STYLESHEETS) as StylesheetState;
+    const computed = await page.evaluate(READ_COMPUTED) as Record<string, string>;
     const html = await page.evaluate(STRIP_OURS) as string;
 
     await page.close();
-    return {html, stylesheets, mutations};
+    return {html, stylesheets, computed, mutations};
 }
