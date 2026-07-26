@@ -239,5 +239,16 @@ jobs:
         run: npm ci
       - if: steps.check.outputs.ready == 'true'
         run: npx playwright install --with-deps chromium
+      # The harness loads the real extension from build/release/chrome-mv3. Without this it
+      # would launch a browser with nothing installed and every assertion would pass
+      # trivially — a perfect score from a harness testing nothing.
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run build
       - if: steps.check.outputs.ready == 'true'
         run: npm run test:purity
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: purity-failures
+          path: test-results/
+          retention-days: 7

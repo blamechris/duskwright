@@ -58,3 +58,8 @@ deno.json
 # System files
 #-----------------------------------
 .DS_Store
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/

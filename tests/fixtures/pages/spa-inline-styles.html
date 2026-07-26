@@ -19,7 +19,17 @@ function render() {
   tick++;
 }
 render();
-setInterval(render, 250);
+// Re-render a FIXED number of times, then stop. The point of this fixture is that a
+// virtual-DOM app rewrites style attributes faster than an observer settles, and eight
+// repaints exercise that fully. Ticking forever also made *which* violations landed depend
+// on where the timer was when the harness stopped watching — a flaky fixture, not a finding.
+let ticks = 0;
+const timer = setInterval(() => {
+  render();
+  if (++ticks >= 8) {
+    clearInterval(timer);
+  }
+}, 150);
 </script>
 </body>
 </html>
