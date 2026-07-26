@@ -46,6 +46,29 @@ exclude case (`color-picker.html` — inverting it makes it wrong, not dark) and
 counter-filter. E6: a page that must be flagged, one that must **not** be, and a transparent
 ancestor chain.
 
+## The corpus could not answer the question it exists to answer
+
+A measurement pass over all 31 original fixtures found: **median 0** inline-styled elements,
+**p90 5**, **max 141**. `ARCHITECTURE.md` §9's "< 100ms on the corpus median" was therefore a budget
+against a page with *zero* of the elements the E2 rewrite is about, and no two candidate designs
+could be told apart by running them against this corpus.
+
+Two fixtures now cover the two distinct failure modes, which had been conflated:
+
+| Fixture | Pressure | Shape |
+|---|---|---|
+| `virtualized-table.html` | **rate** | ~141 inline-styled elements at any moment, ~8,400 created over a 60-frame scroll (~17k/sec) |
+| `dense-inline-styles.html` | **count** | 2,000 simultaneous, static, no timers |
+
+`dense-inline-styles.html` sits at the measured crossover. Blink indexes CSS rules by the
+**rightmost compound selector**, and a purity-legal selector must end in a tag or a page-authored
+class — adding an id or class is the mutation the invariant forbids. So every rule we emit lands in
+one bucket and every candidate element tests every rule: **O(M²)**, ~22ns per element × rule, on
+*every* full style pass. At M=2,000 that is ~89ms of the 100ms budget.
+
+That number is why the fixture exists. A design decision this expensive should not rest on a corpus
+whose median is zero.
+
 ## Deliberate gaps
 
 Recorded in `index.json` under `knownGaps`, and asserted by the tests so they read as decisions

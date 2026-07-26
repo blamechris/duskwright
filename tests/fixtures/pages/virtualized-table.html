@@ -3,7 +3,7 @@
 <head><meta charset="utf-8"><title>Virtualized table (throughput)</title>
 <style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}#grid{height:420px;overflow:auto;border:1px solid #ccc}.row{display:flex}.cell{flex:1;padding:4px 8px;border-bottom:1px solid #eee;font:13px ui-monospace}</style></head>
 <body>
-<h1>Virtualized table</h1><p><strong>The E2 throughput case.</strong> Thousands of cells, each carrying a page-authored inline style, re-rendered on scroll. Per-element selector emission is more expensive than upstream's attribute write; if that cost is unacceptable anywhere it is here, and the answer is a scoped container filter — never a mutation.</p><div id='grid'></div>
+<h1>Virtualized table</h1><p><strong>The E2 <em>churn</em> case.</strong> Only ~141 inline-styled elements exist at any moment (1 spacer + 20 rows &times; 6 cells), but a 60-frame scroll creates about 8,400 of them &mdash; roughly 17,000 per second. The pressure here is <strong>rate</strong>, not count; dense-inline-styles.html covers count. Per-element selector emission is more expensive than upstream's attribute write; if that cost is unacceptable anywhere it is here, and the answer is a scoped container filter — never a mutation.</p><div id='grid'></div>
 <script>
 const grid = document.getElementById('grid');
 const TOTAL = 4000, ROW_H = 24, VISIBLE = 20;
