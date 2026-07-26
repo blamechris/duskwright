@@ -38,9 +38,23 @@ jobs:
 
       - name: No AI or agent attribution
         run: |
-          if grep -rniE "co-authored-by:[[:space:]]*claude|generated with \[?claude" \
-               --include="*.md" --include="*.yml" --include="*.ts" --include="*.js" .; then
-            echo "::error::attribution footer found — see CLAUDE.md"; exit 1
+          # Match attribution as it actually appears — a trailer or footer at the start of a
+          # line — not prose that merely names it. The installed skills legitimately contain
+          # sentences forbidding "Co-Authored-By: Claude", and those must not trip this gate.
+          if grep -rniE '^[[:space:]]*(co-authored-by:[[:space:]]*claude|(:robot:|🤖[[:space:]]*)?generated with \[?claude)' \
+               --include="*.md" --include="*.yml" --include="*.ts" --include="*.js" \
+               --exclude-dir=.git --exclude-dir=.claude --exclude-dir=.codex --exclude-dir=.gemini .; then
+            echo "::error::attribution footer found in tracked content — see CLAUDE.md"; exit 1
+          fi
+
+      - name: No AI attribution in commit trailers
+        if: github.event_name == 'pull_request'
+        run: |
+          # The place a Co-Authored-By trailer actually lands. Scan only this PR's commits.
+          git fetch --quiet origin "${{ github.base_ref }}"
+          if git log "origin/${{ github.base_ref }}..HEAD" --format='%B' \
+               | grep -niE '^[[:space:]]*co-authored-by:[[:space:]]*claude'; then
+            echo "::error::Co-Authored-By trailer found in a commit message — see CLAUDE.md"; exit 1
           fi
 
   lint:
