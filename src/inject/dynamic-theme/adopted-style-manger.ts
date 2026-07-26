@@ -45,12 +45,18 @@ export function createAdoptedStyleSheetOverride(node: Document | ShadowRoot): Ad
         });
     }
 
-    // Purity: mutate adoptedStyleSheets IN PLACE. Assigning a fresh array
-    // (`node.adoptedStyleSheets = newSheets`) replaces the observable array object, so any
-    // reference the page was holding is silently detached — invisible to a MutationObserver
-    // and to a serialized-HTML snapshot alike. ADR 0001 items 14-15, ADR 0002 C5: appending
-    // is permitted, reassigning is not. The array is an ObservableArray in Chromium and
-    // splices apply live, which is the pattern index.ts already uses for our own sheet.
+    // Purity: mutate adoptedStyleSheets IN PLACE rather than assigning a fresh array.
+    //
+    // To be clear about what this does and does not buy, because ADR 0001 originally got it
+    // wrong: reassigning does NOT detach a reference the page is holding. adoptedStyleSheets
+    // is an ObservableArray whose setter writes through to the same backing object, so a held
+    // reference stays live — measured in Chromium, with and without this change, identical
+    // either way. The correction is recorded in ADR 0001 item 14 and ADR 0002 C5.
+    //
+    // In-place splicing is kept anyway because it is what ADR 0002 C5 mandates, it costs
+    // nothing, it matches the pattern index.ts already uses for our own sheet, and it does not
+    // depend on a write-through behaviour that is an implementation detail rather than a
+    // guarantee. It is a style preference, not a fix for observable harm.
     function injectSheet(sheet: CSSStyleSheet, override: CSSStyleSheet) {
         const sheets = getAdoptedSheets(node);
         const overrideIndex = sheets.indexOf(override);
