@@ -112,6 +112,19 @@ Two tests exist purely to stop the harness being vacuous:
   project works, and then "fixed" by weakening it. Rendered colour survives the rewrite, because
   theming still has to change what the user sees however it is delivered.
 
+## What this harness structurally cannot see
+
+Recorded because a gate's blind spots matter as much as its assertions.
+
+**Performance harm we inflict on the page.** With 2,000 per-element structural rules adopted, a
+single `insertBefore` *by the page itself* goes from 1.7ms to 92.3ms — a 54x tax on the application
+we are decorating. No `MutationRecord` fires, no serialized state changes, no page-owned stylesheet
+is touched, so `ownership.ts` classifies it as nothing at all. It is nonetheless the same kind of
+harm the invariant exists to prevent: the user's spreadsheet is unusable and the cause is us.
+
+This shaped ADR 0004's whole design and the harness would never have flagged it. If a cheap runtime
+assertion for it exists, it belongs here.
+
 ## Known gaps
 
 Recorded rather than hidden:
