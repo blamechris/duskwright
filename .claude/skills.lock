@@ -60,6 +60,16 @@
         "gemini",
         "codex"
       ]
+    },
+    "visual-brief": {
+      "hash": "a4c08cb",
+      "installed": "2026-07-25",
+      "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
     }
   }
 }
