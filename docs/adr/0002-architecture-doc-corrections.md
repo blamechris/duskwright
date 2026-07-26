@@ -98,8 +98,14 @@ into the page's document model."
 **Correction:** the serialization half is right — `outerHTML` does not include adopted sheets. The
 implication that the page cannot see it is wrong: page JS can read `document.adoptedStyleSheets` and
 enumerate ours. Upstream also *reassigns* the array wholesale
-(`adopted-style-manger.ts:57, 70`) rather than appending, which detaches any array reference the
-page held.
+(`adopted-style-manger.ts:57, 70`) rather than appending.
+
+> **Amended 2026-07-26.** This section originally added "…which detaches any array reference the
+> page held." Measured in Chromium, it does not: `adoptedStyleSheets` is an `ObservableArray` whose
+> setter writes through to the same backing object, so a held reference stays live. See the
+> correction block on item 14 in [ADR 0001](0001-upstream-purity-audit.md) for the experiment.
+> Append-only remains the rule below — it is free and obviously safe — but it is a style preference,
+> not a fix for observable harm.
 
 **Decision:** the operation stays allowed — the invariant forbids mutations the page can observe as
 changes to *its own content*, and our sheet is not its content. But the rationale in §2 is

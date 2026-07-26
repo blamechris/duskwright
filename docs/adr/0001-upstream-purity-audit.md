@@ -154,9 +154,39 @@ within the invariant; a mutation war is not.
 
 §2 lists appending to `adoptedStyleSheets` as **allowed**, on the grounds that it is additive and
 not serializable. That holds for serialization: `outerHTML` does not include adopted sheets. It does
-**not** hold for observability — page JS can read `document.adoptedStyleSheets` and enumerate ours,
-and item 14 replaces the array wholesale rather than appending, so a page holding a reference to the
-old array sees it detached.
+**not** hold for observability — page JS can read `document.adoptedStyleSheets` and enumerate ours.
+
+> ### Correction (2026-07-26): item 14's stated harm does not occur in Chromium
+>
+> This ADR originally continued: *"item 14 replaces the array wholesale rather than appending, so a
+> page holding a reference to the old array sees it detached."* **That is false**, and it was
+> reasoned rather than measured.
+>
+> `adoptedStyleSheets` is an `ObservableArray`. Its setter **writes through** to the same backing
+> object rather than swapping it. Measured directly in Chromium with no extension involved:
+>
+> ```js
+> const held = document.adoptedStyleSheets;   // length 1
+> document.adoptedStyleSheets = [s1, s2];     // wholesale reassignment
+> held.length            // => 2   (still live)
+> held === document.adoptedStyleSheets // => true
+> ```
+>
+> So a page holding a reference is **not** detached by reassignment, and item 14 is not the
+> violation this audit claimed. It is downgraded from a violation to a **style preference**: append
+> -only is still what `ADR 0002 C5` mandates and is still what the code now does, because it is
+> obviously safe and costs nothing — but no user-visible harm was being caused, and no baseline
+> entry should have existed for it.
+>
+> **How it was found:** the purity harness grew an assertion for item 14, which failed. Investigating
+> the failure showed the assertion was measuring object *identity*, which differs for an unrelated
+> reason — the MAIN-world proxy wraps the `adoptedStyleSheets` getter (`stylesheet-proxy.ts:320`),
+> so the page's captured reference is the native array while later reads return a `Proxy`. The
+> harness assertion now measures **liveness**, which is the property that would actually matter.
+>
+> That the proxy is detectable at all is real, but it is a *fingerprinting* concern rather than a
+> purity violation — a wrapped accessor is neither a DOM mutation nor page content. It is recorded
+> as evidence on the open question in ADR 0002 C2 (issue #25), not asserted as a gate.
 
 The invariant's own wording resolves this: it forbids mutations the page can observe *as a change to
 its own content or serialize into its document model*. Our sheet is not the page's content. So

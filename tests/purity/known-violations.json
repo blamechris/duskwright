@@ -20,10 +20,7 @@
         "  data-darkreader-proxy-injected on <html>    -> item 9",
         "  added <meta> under <head>                   -> item 10 (transient; only the observer sees it)",
         "  #text churn under pre#serialized            -> the editor serializing our write into its own model",
-        "",
-        "detachedAdoptedArray: fixtures where the extension REASSIGNS",
-        "document.adoptedStyleSheets instead of appending, detaching a reference the page",
-        "held (ADR 0001 item 14 / ADR 0002 C5). Same ratchet rules as above."
+        ""
     ],
     "fixtures": {
         "static-plain.html": [
@@ -249,8 +246,5 @@
             "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
             "attribute \"data-darkreader-scheme\" written on page-owned <html>"
         ]
-    },
-    "detachedAdoptedArray": [
-        "adopted-stylesheets.html"
-    ]
+    }
 }

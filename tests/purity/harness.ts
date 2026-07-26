@@ -91,10 +91,23 @@ const READ_STYLESHEETS = `
     return {
         documentSheets: documentSheets.join('\\n---\\n'),
         adopted,
-        // ADR 0001 item 14: upstream REASSIGNS node.adoptedStyleSheets rather than appending,
-        // which detaches any array reference the page was holding. Fixtures that keep one
-        // expose it here so the harness can catch that directly.
-        pageArrayIntact: window.__pageAdoptedRef === undefined
+        // ADR 0001 item 14, as CORRECTED: the harm would be a page reference going STALE,
+        // not object identity changing. Measured in Chromium, adoptedStyleSheets is an
+        // ObservableArray whose setter writes THROUGH to the same backing object, so even
+        // a wholesale reassignment leaves a held reference live. Identity meanwhile changes
+        // for an unrelated reason - the MAIN-world proxy wraps the getter - so asserting on
+        // identity produced a false positive against a violation that was not occurring.
+        pageArrayLive: window.__pageAdoptedRef === undefined
+            ? null
+            : window.__pageAdoptedRef.length === document.adoptedStyleSheets.length &&
+              Array.prototype.every.call(
+                  window.__pageAdoptedRef,
+                  (s, i) => s === document.adoptedStyleSheets[i],
+              ),
+        // Recorded, NOT asserted. A wrapped accessor is not a DOM mutation and is not page
+        // content, so it does not violate the invariant as stated — but it does make the
+        // extension detectable, which is evidence for issue #25 (the MAIN-world proxy's fate).
+        gettersIdentical: window.__pageAdoptedRef === undefined
             ? null
             : window.__pageAdoptedRef === document.adoptedStyleSheets,
     };
@@ -135,8 +148,10 @@ const STRIP_OURS = `
 export interface StylesheetState {
     documentSheets: string;
     adopted: string[];
-    /** null when the fixture doesn't hold a reference; false means it was detached. */
-    pageArrayIntact: boolean | null;
+    /** null when the fixture holds no reference; false means it went stale. */
+    pageArrayLive: boolean | null;
+    /** Recorded for issue #25, not asserted — see the note in READ_STYLESHEETS. */
+    gettersIdentical: boolean | null;
 }
 
 export interface PuritySnapshot {
@@ -147,20 +162,32 @@ export interface PuritySnapshot {
     mutations: MutationDesc[];
 }
 
-export async function launchWithExtension(): Promise<BrowserContext> {
-    // MV3 service workers require a persistent context and the new headless mode.
+/**
+ * Every capture gets its OWN browser context, and closes it afterwards.
+ *
+ * Sharing one persistent context across the corpus made the suite nondeterministic: two
+ * consecutive full runs failed on different fixtures (late-injected-styles + css-variables,
+ * then shadow-dom-closed) with no code change between them. State accumulates across 90+
+ * page loads — per-site extension settings, caches, service-worker restarts — and leaks into
+ * whichever fixture happens to run next.
+ *
+ * Intermittent red is disqualifying for a blocking gate. It trains everyone to re-run until
+ * green, which is precisely how a real violation gets waved through. Isolation costs wall
+ * clock and buys the only property that matters here: the same input always gives the same
+ * answer.
+ */
+export async function launchContext(withExtension: boolean): Promise<BrowserContext> {
+    // MV3 service workers require a persistent context.
     return chromium.launchPersistentContext('', {
         headless: true,
         channel: 'chromium',
-        args: [
-            `--disable-extensions-except=${EXTENSION_PATH}`,
-            `--load-extension=${EXTENSION_PATH}`,
-        ],
+        args: withExtension
+            ? [
+                `--disable-extensions-except=${EXTENSION_PATH}`,
+                `--load-extension=${EXTENSION_PATH}`,
+            ]
+            : [],
     });
-}
-
-export async function launchClean(): Promise<BrowserContext> {
-    return chromium.launchPersistentContext('', {headless: true, channel: 'chromium'});
 }
 
 /** Wait for the theming pipeline to settle. */
@@ -168,7 +195,20 @@ async function settle(page: Page, ms: number): Promise<void> {
     await page.waitForTimeout(ms);
 }
 
-export async function capture(context: BrowserContext, url: string, settleMs: number): Promise<PuritySnapshot> {
+export async function capture(
+    withExtension: boolean,
+    url: string,
+    settleMs: number,
+): Promise<PuritySnapshot> {
+    const context = await launchContext(withExtension);
+    try {
+        return await captureIn(context, url, settleMs);
+    } finally {
+        await context.close();
+    }
+}
+
+async function captureIn(context: BrowserContext, url: string, settleMs: number): Promise<PuritySnapshot> {
     const page = await context.newPage();
     await page.addInitScript(RECORDER);
     await page.goto(url, {waitUntil: 'load'});
