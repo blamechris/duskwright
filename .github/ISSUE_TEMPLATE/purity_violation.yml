@@ -1,0 +1,59 @@
+name: Purity violation
+description: The extension wrote to page-owned DOM
+labels: ["purity", "bug", "priority:high"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The purity invariant is the product. A confirmed violation outranks every other open issue.
+
+        > The extension must never produce a mutation of the page DOM that the page's own
+        > JavaScript can observe as a change to its own content or serialize into its document
+        > model.
+
+        See `ARCHITECTURE.md` §2 and `docs/adr/0001-upstream-purity-audit.md`.
+
+  - type: textarea
+    id: mutation
+    attributes:
+      label: The mutation
+      description: >-
+        Which page-owned element, and what was written to it. An inline style write, a class or
+        attribute change, a rule inserted into a page-owned sheet, or a node inserted into page DOM.
+      placeholder: |
+        Element: td.cell in the Sheets grid
+        Write:   element.style.setProperty('--darkreader-inline-color', ...)
+        Source:  src/inject/dynamic-theme/inline-style.ts:412
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 — serializable into the page's document model (data damage)
+        - P1 — observable by page JS but not normally serialized
+        - P2 — destroys page-owned state
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >-
+        A failing purity-harness run, a MutationObserver log, or a before/after of the serialized
+        HTML. If the harness passes but the violation is real, say so — that is itself a bug in
+        the gate and needs its own issue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: replacement
+    attributes:
+      label: Proposed replacement
+      description: >-
+        Selector emission into our own sheet, a specificity win, a scoped container filter, or an
+        honest report through coverage detection. "Keep the mutation but make it smaller" is not
+        an option.

@@ -1,0 +1,23 @@
+Duskwright
+Copyright (c) 2026 Chris Bowen
+
+This product is a fork of Dark Reader.
+
+  Dark Reader
+  https://github.com/darkreader/darkreader
+  Copyright (c) 2026 Dark Reader Ltd.
+  Licensed under the MIT License.
+
+Substantial portions of this software — including the dynamic theming engine, the
+HSL-aware color modification routines, stylesheet parsing and override generation,
+shadow-DOM traversal, and the per-site fixes catalog — originate from Dark Reader and
+remain under its copyright. Both copyright notices are retained in LICENSE, as the MIT
+License requires.
+
+"Dark Reader" is a trademark of Dark Reader Ltd. This project is not affiliated with,
+endorsed by, or sponsored by Dark Reader Ltd. The Dark Reader name and logo are not used
+in this project's branding, user interface, or store listing. References to Dark Reader
+exist solely to identify the upstream project this software is derived from, as the
+license requires and as accuracy demands.
+
+Modifications made by this project are likewise licensed under the MIT License.

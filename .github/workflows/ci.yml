@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Repo hygiene. Runs from day one, before any source exists.
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 is load-bearing. The default depth-1 checkout leaves the base ref
+      # unresolvable, so the commit-trailer scan below cannot see the PR's history at all.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Required files are present
+        run: |
+          missing=0
+          for f in LICENSE NOTICE README.md CLAUDE.md ARCHITECTURE.md; do
+            if [ ! -f "$f" ]; then echo "::error::missing required file: $f"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Upstream attribution is retained
+        run: |
+          grep -q "Dark Reader Ltd." LICENSE || {
+            echo "::error::LICENSE must retain upstream's copyright (MIT fork requirement)"; exit 1; }
+          grep -q "darkreader/darkreader" README.md || {
+            echo "::error::README must state plainly that this is a fork and link upstream"; exit 1; }
+
+      - name: No AI or agent attribution
+        run: |
+          # Match attribution as it actually appears — a trailer or footer at the start of a
+          # line — not prose that merely names it. The installed skills legitimately contain
+          # sentences forbidding "Co-Authored-By: Claude", and those must not trip this gate.
+          AGENTS='claude|anthropic|copilot|codex|chatgpt|gpt-[0-9]|gemini|cursor|devin|aider'
+          if grep -rniE "^[[:space:]]*(co-authored-by:[[:space:]]*($AGENTS)|(:robot:|🤖)?[[:space:]]*generated (with|by) \[?($AGENTS))" \
+               --include="*.md" --include="*.yml" --include="*.ts" --include="*.js" \
+               --exclude-dir=.git --exclude-dir=.claude --exclude-dir=.codex --exclude-dir=.gemini .; then
+            echo "::error::attribution footer found in tracked content — see CLAUDE.md"; exit 1
+          fi
+
+      - name: No attribution trailers in commits
+        if: github.event_name == 'pull_request'
+        run: |
+          # The place a Co-Authored-By trailer actually lands. Scan only this PR's commits.
+          # The policy bans the trailer outright — no Claude, no other agent, no human
+          # co-author — so this matches any Co-Authored-By, not a name list.
+          set -euo pipefail
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --quiet origin "${{ github.base_ref }}"
+
+          # Resolve the range explicitly and FAIL if we cannot. Piping git straight into
+          # grep hides git's own failure: the pipeline takes grep's status, "no match" is
+          # exit 1, and the `if` reads that as clean. A gate that cannot fail is not a gate.
+          if ! MERGE_BASE=$(git merge-base "$BASE" HEAD 2>/dev/null); then
+            echo "::error::cannot resolve $BASE — the commit range was not scanned. \
+          This check must not pass without inspecting history (is fetch-depth 0?)."
+            exit 1
+          fi
+
+          COMMITS=$(git rev-list --count "$MERGE_BASE..HEAD")
+          echo "scanning $COMMITS commit(s) from $MERGE_BASE to HEAD"
+          if [ "$COMMITS" -eq 0 ]; then
+            echo "::error::resolved an empty commit range — refusing to report clean"; exit 1
+          fi
+
+          TRAILERS=$(git log "$MERGE_BASE..HEAD" --format='%B' \
+                       | grep -niE '^[[:space:]]*co-authored-by:' || true)
+          if [ -n "$TRAILERS" ]; then
+            echo "$TRAILERS"
+            echo "::error::Co-Authored-By trailer found in a commit message — see CLAUDE.md"
+            exit 1
+          fi
+          echo "no attribution trailers found"
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -f package.json ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::no package.json yet (pre-E1) — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run lint
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -f package.json ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::no package.json yet (pre-E1) — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run build
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -f package.json ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::no package.json yet (pre-E1) — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npm test
+
+  # Advisory for now — deliberately NOT a required check until the suite exists (E2+).
+  # Present so the `npm run test:e2e` documented in CLAUDE.md and README has a CI home
+  # rather than drifting into a command nothing ever runs.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          if [ -d tests/e2e ]; then echo "ready=true" >> "$GITHUB_OUTPUT";
+          else echo "ready=false" >> "$GITHUB_OUTPUT"; echo "::notice::e2e suite lands with E2+ — skipping"; fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run test:e2e
+
+  # THE BLOCKING GATE. See CLAUDE.md and docs/adr/0001.
+  # Never add exclusions here to make a PR pass. If it is red, the code is wrong.
+  purity:
+    name: purity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: |
+          set -euo pipefail
+          # The self-skip exists only to bridge the pre-E2 window. It must expire on its own,
+          # or a deleted/renamed harness reports green forever — the exact "gate that passes on
+          # a real violation" failure mode ADR 0001 warns about, applied to the gate itself.
+          HAS_SCRIPT=false
+          if [ -f package.json ] && node -e \
+               'process.exit(require("./package.json").scripts?.["test:purity"] ? 0 : 1)'; then
+            HAS_SCRIPT=true
+          fi
+
+          if [ -d tests/purity ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_SCRIPT" = true ]; then
+            echo "::error::package.json defines test:purity but tests/purity/ is missing. \
+          The purity harness has landed, so this job must never self-skip again."
+            exit 1
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::purity harness lands in E2 — skipping"
+          fi
+      - if: steps.check.outputs.ready == 'true'
+        run: npm ci
+      - if: steps.check.outputs.ready == 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.check.outputs.ready == 'true'
+        run: npm run test:purity
