@@ -48,9 +48,11 @@ With 2,000 per-element structural rules adopted, a single `insertBefore` **by th
 | with 2,000 per-element structural rules | **92.3 ms** |
 | with one container filter | 1.7 ms |
 
-**A 54× tax on the application we are supposed to be decorating.** Reproduced three times
-independently — two workflow agents (47×, 42×) and once directly while writing this ADR (54.3×).
-The spread is machine noise; the order of magnitude is not.
+**A 54× tax on the application we are supposed to be decorating.** Reproduced **three times
+independently**, on separate benchmark harnesses written without reference to each other: 47×, 42×,
+and 54.3×. The spread is machine noise; the order of magnitude is not. Reproduce it with
+`tests/fixtures/pages/dense-inline-styles.html`: adopt N per-element structural rules, then time a
+single `insertBefore` by the page.
 
 **The purity harness cannot see this.** It is not a DOM mutation, so no `MutationRecord` fires; no
 serialized state changes; no stylesheet the page owns is touched. `tests/purity/ownership.ts`
@@ -90,7 +92,8 @@ it actively harmful at scale, not merely slow.
 ### Corrections this forces
 
 - **ADR 0001 decision 2 is superseded.** Its *intent* — one selector engine shared with E4's
-  picker — stands, and `src/rules/selector/` is that engine. Its *default mechanism* does not.
+  picker — stands, and that engine **will live** at `src/rules/selector/` (it does not exist yet;
+  step 3 creates it). Its *default mechanism* does not survive.
 - **`ARCHITECTURE.md` §2 frames the container filter as what you fall back to "where per-element
   selector emission is too costly."** That has it backwards for dense regions: the filter is the
   only mechanism measured to cost the page nothing, and per-element emission is the one that
