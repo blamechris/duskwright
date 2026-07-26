@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Cross-origin stylesheet</title>
+<link rel="stylesheet" href="http://127.0.0.1:8789/cross-origin.css" crossorigin="anonymous">
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}</style></head>
+<body>
+<h1>Cross-origin stylesheet</h1><p class='remote'>The stylesheet for this element is served from a second origin by the fixture server. <code>sheet.cssRules</code> throws SecurityError; upstream falls back to re-fetching over the network, which fails when the CSS is auth-gated (ARCHITECTURE.md §1 cause 1).</p>
+
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>SPA with runtime inline styles</title>
+<style>body{background:#fff;color:#222;font:16px system-ui;margin:0;padding:24px}#root{display:grid;gap:8px}</style></head>
+<body>
+<h1>Runtime inline styles</h1><div id='root'></div><p>Rows below are re-rendered with fresh <code>style</code> attributes every 250ms, the way a virtual-DOM app repaints. Upstream writes into these attributes; we must not.</p>
+<script>
+const root = document.getElementById('root');
+let tick = 0;
+function render() {
+  root.innerHTML = '';
+  for (let i = 0; i < 25; i++) {
+    const d = document.createElement('div');
+    // Page-authored inline style. Must survive byte-identical.
+    d.setAttribute('style', `background: hsl(${(i * 14 + tick) % 360} 70% 92%); color: #333; padding: 6px`);
+    d.textContent = `row ${i} @ ${tick}`;
+    root.appendChild(d);
+  }
+  tick++;
+}
+render();
+setInterval(render, 250);
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Strict CSP style-src</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}</style></head>
+<body>
+<h1>Strict <code>style-src</code></h1><p>This page's CSP blocks injected <code>&lt;style&gt;</code> elements (§1 cause 5). Constructed stylesheets on <code>adoptedStyleSheets</code> are not subject to style-src the same way in Chromium, which is the mechanism that should carry us here.</p><div class='panel'>Panel content.</div>
+
+</body>
+</html>

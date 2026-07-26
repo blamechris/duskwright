@@ -33,7 +33,9 @@
         "test:unit:debug": "node --inspect-brk ./node_modules/jest/bin/jest --config=tests/unit/jest.config.mjs --runInBand --no-cache --watch",
         "translate-en-message": "node ./tasks/translate.js --message",
         "translate-new-en-messages": "node ./tasks/translate.js --new-messages",
-        "deno:bootstrap": "deno run --allow-read=./ --allow-sys=uid --allow-write=deno.json tasks/deno.js"
+        "deno:bootstrap": "deno run --allow-read=./ --allow-sys=uid --allow-write=deno.json tasks/deno.js",
+        "fixtures": "node tests/fixtures/server.mjs",
+        "fixtures:check": "node tests/fixtures/server.mjs --check"
     },
     "main": "darkreader.js",
     "module": "darkreader.mjs",

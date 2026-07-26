@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>CSS custom properties</title>
+<style>:root{--bg:#ffffff;--fg:#111111;--accent:#0645ad;--surface:#f4f4f4}body{background:var(--bg);color:var(--fg);font:16px system-ui;margin:0;padding:24px}.card{background:var(--surface);border-left:3px solid var(--accent);padding:14px;margin:10px 0}.scoped{--surface:#fff8e1}</style></head>
+<body>
+<h1>CSS variables</h1><p>Theming has to resolve through custom properties, including a locally overridden scope, without writing variables onto page elements.</p><div class='card'>Uses the root surface colour.</div><div class='scoped'><div class='card'>Uses a locally overridden surface colour.</div></div>
+
+</body>
+</html>

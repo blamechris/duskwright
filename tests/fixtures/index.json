@@ -1,0 +1,83 @@
+{
+  "$comment": [
+    "The fixture corpus. Every later epic is measured against this, which is why it lands in E1",
+    "rather than E7 — there is nothing to measure before it exists.",
+    "",
+    "'purityClass' maps to the six fixture classes ARCHITECTURE.md §2 requires of the purity harness.",
+    "'cause' maps to the nine reasons theming fails in ARCHITECTURE.md §1.",
+    "'epics' lists the epics that assert against this fixture.",
+    "Coverage is asserted by tests/fixtures/coverage.test.mjs — if a §1 cause or §2 class ends up",
+    "with no fixture, that test fails rather than the gap going unnoticed."
+  ],
+  "origins": {"pages": 8788, "crossOrigin": 8789},
+  "fixtures": [
+    {"file": "static-plain.html", "purityClass": "static", "epics": ["E2"],
+     "note": "Strictest purity baseline — no script, so any mutation is unambiguous."},
+    {"file": "spa-inline-styles.html", "purityClass": "spa-inline", "cause": 6, "epics": ["E2"],
+     "note": "Page-authored style attributes rewritten every 250ms. The ADR 0001 items 1-4 case."},
+    {"file": "adopted-stylesheets.html", "purityClass": "adopted-stylesheets", "epics": ["E2"],
+     "note": "Holds a live reference to document.adoptedStyleSheets; detects array reassignment (ADR 0001 item 14)."},
+    {"file": "shadow-dom-open.html", "purityClass": "shadow-dom", "cause": 2, "epics": ["E2", "E7"],
+     "note": "Includes a shadow root nested inside another."},
+    {"file": "shadow-dom-closed.html", "cause": 2, "epics": ["E7"],
+     "note": "Unreachable by design. Must be reported honestly, not silently skipped."},
+    {"file": "canvas-rendered.html", "purityClass": "canvas", "cause": 4, "epics": ["E5", "E4"],
+     "note": "No DOM text. Only compositing can help — the picker + scoped filter case."},
+    {"file": "contenteditable-editor.html", "purityClass": "contenteditable", "epics": ["E2"],
+     "note": "Serializes its own innerHTML via MutationObserver — the Google Docs failure shape."},
+
+    {"file": "cors-stylesheet.html", "cause": 1, "epics": ["E7"],
+     "note": "Stylesheet from the second origin; cssRules throws SecurityError."},
+    {"file": "iframe-same-origin.html", "cause": 3, "epics": ["E4", "E7"]},
+    {"file": "iframe-sandboxed.html", "cause": 3, "epics": ["E7"]},
+    {"file": "iframe-cross-origin.html", "cause": 3, "epics": ["E4", "E7"]},
+    {"file": "csp-strict.html", "cause": 5, "epics": ["E7"],
+     "note": "Constructed stylesheets should carry us here; DNR relaxation stays opt-in."},
+    {"file": "css-in-js.html", "cause": 7, "epics": ["E4", "E7"],
+     "note": "Hash class names (css-1a2b3c, sc-bdVaJa, _1x2y3z) plus a late insertRule."},
+    {"file": "site-own-dark-mode.html", "cause": 8, "epics": ["E6", "E7"],
+     "note": "Tier 0 target: force the media query, touch nothing else."},
+    {"file": "already-dark.html", "cause": 8, "epics": ["E6"],
+     "note": "Must stand down rather than double-invert."},
+    {"file": "webgl-canvas.html", "cause": 4, "epics": ["E5"]},
+
+    {"file": "virtualized-table.html", "cause": 6, "epics": ["E2", "E5"],
+     "note": "THE throughput case. 4000 rows x 6 inline-styled cells, re-rendered on scroll."},
+
+    {"file": "coverage-partial.html", "epics": ["E6"],
+     "note": "~1/3 of viewport left light — must be flagged."},
+    {"file": "coverage-tiny-light.html", "epics": ["E6"],
+     "note": "False-positive guard for the <10% acceptance criterion. Must NOT be flagged."},
+    {"file": "coverage-transparent-chain.html", "epics": ["E6"],
+     "note": "transparent must resolve up the ancestor chain, not read as black."},
+
+    {"file": "color-picker.html", "epics": ["E5"],
+     "note": "The exclude-treatment case. Inverting this makes it wrong, not dark."},
+    {"file": "media-heavy.html", "epics": ["E5"],
+     "note": "img, canvas, svg, and background-image all need the counter-filter. Assets are data URIs — no network."},
+
+    {"file": "selectors-stable-ids.html", "epics": ["E4"],
+     "note": "id and semantic-attribute strategies should win with high confidence."},
+    {"file": "selectors-hash-ids.html", "epics": ["E4"],
+     "note": "Every id matches the reject pattern and must not anchor a selector."},
+    {"file": "selectors-structural.html", "epics": ["E4"],
+     "note": "nth-child path must anchor at #app, not at body."},
+    {"file": "selectors-drift.html", "epics": ["E4"],
+     "note": "Buttons force zero-match and over-match; both must degrade to no-op plus notice."},
+
+    {"file": "forms-and-tables.html", "epics": ["E2", "E7"],
+     "note": "UA-styled controls behave differently from authored CSS."},
+    {"file": "svg-heavy.html", "epics": ["E2"],
+     "note": "Upstream writes data-darkreader-inline-invert on page SVG roots (ADR 0001 item 6)."},
+    {"file": "fixed-and-sticky.html", "epics": ["E6"],
+     "note": "Overlays are where painted-area sampling most often miscounts."},
+    {"file": "late-injected-styles.html", "cause": 6, "epics": ["E2", "E7"],
+     "note": "Stylesheet at 800ms, inline-styled element at 1600ms."},
+    {"file": "css-variables.html", "epics": ["E2"],
+     "note": "Resolution through custom properties, including a locally overridden scope."}
+  ],
+  "knownGaps": [
+    "Cause 9 (restricted pages: chrome://, the Web Store) cannot be a fixture — the extension is not permitted to run there. It is verified by E7's restricted-page detection test instead, not by this corpus.",
+    "No fixture yet reproduces a real Google Sheets or Figma document. canvas-rendered.html and webgl-canvas.html approximate the rendering model; the E2 Sheets round-trip test needs the real application and is tracked on its own issue."
+  ]
+}

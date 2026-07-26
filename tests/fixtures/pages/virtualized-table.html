@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Virtualized table (throughput)</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}#grid{height:420px;overflow:auto;border:1px solid #ccc}.row{display:flex}.cell{flex:1;padding:4px 8px;border-bottom:1px solid #eee;font:13px ui-monospace}</style></head>
+<body>
+<h1>Virtualized table</h1><p><strong>The E2 throughput case.</strong> Thousands of cells, each carrying a page-authored inline style, re-rendered on scroll. Per-element selector emission is more expensive than upstream's attribute write; if that cost is unacceptable anywhere it is here, and the answer is a scoped container filter — never a mutation.</p><div id='grid'></div>
+<script>
+const grid = document.getElementById('grid');
+const TOTAL = 4000, ROW_H = 24, VISIBLE = 20;
+const spacer = document.createElement('div');
+spacer.style.height = (TOTAL * ROW_H) + 'px';
+spacer.style.position = 'relative';
+grid.appendChild(spacer);
+function render() {
+  const start = Math.floor(grid.scrollTop / ROW_H);
+  spacer.innerHTML = '';
+  for (let i = start; i < Math.min(start + VISIBLE, TOTAL); i++) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.setAttribute('style', `position:absolute;top:${i * ROW_H}px;left:0;right:0;background:${i % 2 ? '#fff' : '#fafafa'}`);
+    for (let c = 0; c < 6; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.setAttribute('style', `color:${c === 0 ? '#0645ad' : '#333'}`);
+      cell.textContent = c === 0 ? `R${i}` : (i * (c + 1)).toLocaleString();
+      row.appendChild(cell);
+    }
+    spacer.appendChild(row);
+  }
+}
+grid.addEventListener('scroll', render);
+render();
+</script>
+</body>
+</html>

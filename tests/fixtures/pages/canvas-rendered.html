@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Canvas-rendered text</title>
+<style>body{background:#fff;margin:0;padding:24px;font:16px system-ui}canvas{border:1px solid #ccc}</style></head>
+<body>
+<h1>Canvas rendering</h1><p>Text below is painted into a canvas. There is no DOM text to recolor, so no DOM-based engine can ever fix this — it is the scoped-filter (Tier 2) and picker case.</p><canvas id='c' width='560' height='220'></canvas>
+<script>
+const ctx = document.getElementById('c').getContext('2d');
+ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 560, 220);
+ctx.fillStyle = '#111111'; ctx.font = '16px system-ui';
+for (let i = 0; i < 8; i++) ctx.fillText(`Spreadsheet-like row ${i} — 1,234.00`, 16, 28 + i * 24);
+ctx.strokeStyle = '#ddd';
+for (let i = 0; i < 9; i++) { ctx.beginPath(); ctx.moveTo(8, 12 + i * 24); ctx.lineTo(552, 12 + i * 24); ctx.stroke(); }
+</script>
+</body>
+</html>
