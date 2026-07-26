@@ -71,13 +71,18 @@ jobs:
             exit 1
           fi
 
-          COMMITS=$(git rev-list --count "$MERGE_BASE..HEAD")
-          echo "scanning $COMMITS commit(s) from $MERGE_BASE to HEAD"
+          # --first-parent follows only our own mainline. A vendor merge (the E1 fork ingest
+          # brought in 10,159 upstream commits) appears as a single commit rather than its
+          # whole history, so we scan what WE authored. Upstream's contributors legitimately
+          # use Co-authored-by trailers; the policy governs our commits, and rewriting an
+          # imported history to satisfy it would be both absurd and dishonest.
+          COMMITS=$(git rev-list --count --first-parent "$MERGE_BASE..HEAD")
+          echo "scanning $COMMITS first-parent commit(s) from $MERGE_BASE to HEAD"
           if [ "$COMMITS" -eq 0 ]; then
             echo "::error::resolved an empty commit range — refusing to report clean"; exit 1
           fi
 
-          TRAILERS=$(git log "$MERGE_BASE..HEAD" --format='%B' \
+          TRAILERS=$(git log --first-parent "$MERGE_BASE..HEAD" --format='%B' \
                        | grep -niE '^[[:space:]]*co-authored-by:' || true)
           if [ -n "$TRAILERS" ]; then
             echo "$TRAILERS"
