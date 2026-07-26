@@ -95,8 +95,10 @@ Recorded rather than hidden:
   The harness allows all of them because they are provably ours. Tightening this to exactly one is
   an E2 rewrite-time decision — the rewrite moves to constructed stylesheets, which removes the
   question rather than answering it.
-- **`spa-inline-styles.html` rewrites itself every 250ms**, so its `childList` counts cannot cancel
-  exactly. Attribute and `characterData` records are still compared strictly, which is where that
-  fixture's violations live. Marked `nondeterministic` in the corpus manifest.
+- **The `nondeterministic` escape hatch exists but nothing uses it.** `spa-inline-styles.html`
+  originally ticked forever, which made *which* violations landed depend on where the timer was when
+  the harness stopped watching — it passed locally and failed in CI with a different set. It now
+  re-renders a fixed 8 times and settles, so it is compared strictly like everything else. The flag
+  remains for a future fixture that genuinely cannot settle; reach for a deterministic fixture first.
 - **No fixture reproduces ADR 0001 item 13** (the WordPress conflicting-plugin attribute war). It
   needs a fixture that installs a competing plugin's markup; tracked with the item-13 issue.
