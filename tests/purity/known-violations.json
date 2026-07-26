@@ -1,0 +1,249 @@
+{
+    "$comment": [
+        "BASELINE OF KNOWN, UNFIXED VIOLATIONS — NOT AN EXCLUSION LIST.",
+        "",
+        "The engine imported in E1 violates the purity invariant in the fourteen places catalogued",
+        "in docs/adr/0001-upstream-purity-audit.md. E2 fixes them one at a time. Until then the",
+        "harness would be red on every PR, which trains everyone to ignore it.",
+        "",
+        "So the suite asserts the violation set EQUALS this baseline, exactly:",
+        "  - a NEW violation fails the build (a regression)",
+        "  - a violation that DISAPPEARS also fails the build, telling you to tighten this file",
+        "",
+        "That second half is what makes this a ratchet rather than a mute button. Entries may only",
+        "ever be REMOVED, and removing one means the corresponding ADR 0001 site is fixed. Adding",
+        "an entry to make CI green is the thing CLAUDE.md forbids.",
+        "",
+        "Mapping to ADR 0001:",
+        "  attribute style / data-darkreader-inline-*  -> items 1-3, 5, 6 (P0/P1, the Sheets failure)",
+        "  data-darkreader-mode / -scheme on <html>    -> item 7",
+        "  data-darkreader-proxy-injected on <html>    -> item 9",
+        "  added <meta> under <head>                   -> item 10 (transient; only the observer sees it)",
+        "  #text churn under pre#serialized            -> the editor serializing our write into its own model"
+    ],
+    "fixtures": {
+        "static-plain.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "spa-inline-styles.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-color\" written on page-owned <div>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <div>"
+        ],
+        "adopted-stylesheets.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "shadow-dom-open.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "shadow-dom-closed.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "canvas-rendered.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "contenteditable-editor.html": [
+            "added <#text>; removed <#text> under page-owned <pre>",
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <span>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <span>",
+            "attribute \"data-darkreader-inline-color\" written on page-owned <p>",
+            "attribute \"data-darkreader-inline-color\" written on page-owned <span>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <p>",
+            "attribute \"style\" written on page-owned <span>"
+        ],
+        "cors-stylesheet.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "iframe-same-origin.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "iframe-sandboxed.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "iframe-cross-origin.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "csp-strict.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "css-in-js.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "site-own-dark-mode.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "already-dark.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "webgl-canvas.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "virtualized-table.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-color\" written on page-owned <div>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <div>"
+        ],
+        "coverage-partial.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "coverage-tiny-light.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "coverage-transparent-chain.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "color-picker.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <div>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <div>"
+        ],
+        "media-heavy.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-fill\" written on page-owned <circle>",
+            "attribute \"data-darkreader-inline-fill\" written on page-owned <rect>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <circle>",
+            "attribute \"style\" written on page-owned <rect>"
+        ],
+        "selectors-stable-ids.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "selectors-hash-ids.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "selectors-structural.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "selectors-drift.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "forms-and-tables.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <td>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <td>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <td>"
+        ],
+        "svg-heavy.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-fill\" written on page-owned <circle>",
+            "attribute \"data-darkreader-inline-fill\" written on page-owned <rect>",
+            "attribute \"data-darkreader-inline-fill\" written on page-owned <text>",
+            "attribute \"data-darkreader-inline-stroke\" written on page-owned <path>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <circle>",
+            "attribute \"style\" written on page-owned <path>",
+            "attribute \"style\" written on page-owned <rect>",
+            "attribute \"style\" written on page-owned <text>"
+        ],
+        "fixed-and-sticky.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ],
+        "late-injected-styles.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-color\" written on page-owned <div>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>",
+            "attribute \"style\" written on page-owned <div>"
+        ],
+        "css-variables.html": [
+            "added <meta> under page-owned <head>",
+            "attribute \"data-darkreader-mode\" written on page-owned <html>",
+            "attribute \"data-darkreader-proxy-injected\" written on page-owned <html>",
+            "attribute \"data-darkreader-scheme\" written on page-owned <html>"
+        ]
+    }
+}

@@ -35,7 +35,9 @@
         "translate-new-en-messages": "node ./tasks/translate.js --new-messages",
         "deno:bootstrap": "deno run --allow-read=./ --allow-sys=uid --allow-write=deno.json tasks/deno.js",
         "fixtures": "node tests/fixtures/server.mjs",
-        "fixtures:check": "node tests/fixtures/server.mjs --check"
+        "fixtures:check": "node tests/fixtures/server.mjs --check",
+        "test:purity": "playwright test --project=purity",
+        "test:e2e": "playwright test --project=e2e"
     },
     "main": "darkreader.js",
     "module": "darkreader.mjs",
@@ -70,6 +72,7 @@
         "@eslint/compat": "2.1.0",
         "@eslint/eslintrc": "3.3.6",
         "@eslint/js": "10.0.0",
+        "@playwright/test": "^1.62.0",
         "@rollup/plugin-node-resolve": "16.0.3",
         "@rollup/plugin-replace": "6.0.3",
         "@rollup/plugin-typescript": "12.3.0",

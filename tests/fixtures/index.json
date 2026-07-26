@@ -13,7 +13,7 @@
   "fixtures": [
     {"file": "static-plain.html", "purityClass": "static", "epics": ["E2"],
      "note": "Strictest purity baseline — no script, so any mutation is unambiguous."},
-    {"file": "spa-inline-styles.html", "purityClass": "spa-inline", "cause": 6, "epics": ["E2"],
+    {"file": "spa-inline-styles.html", "purityClass": "spa-inline", "cause": 6, "epics": ["E2"], "nondeterministic": true,
      "note": "Page-authored style attributes rewritten every 250ms. The ADR 0001 items 1-4 case."},
     {"file": "adopted-stylesheets.html", "purityClass": "adopted-stylesheets", "epics": ["E2"],
      "note": "Holds a live reference to document.adoptedStyleSheets; detects array reassignment (ADR 0001 item 14)."},

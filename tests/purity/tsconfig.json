@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "lib": [
+            "ESNext",
+            "Dom"
+        ],
+        "types": [
+            "node"
+        ],
+        "allowJs": true,
+        "esModuleInterop": true,
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "noImplicitAny": true,
+        "strictNullChecks": true,
+        "inlineSourceMap": true
+    },
+    "include": [
+        "./**/*.ts",
+        "../fixtures/server.mjs",
+        "../../playwright.config.ts"
+    ]
+}
