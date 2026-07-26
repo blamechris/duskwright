@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Closed shadow roots</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}</style></head>
+<body>
+<h1>Closed shadow DOM</h1><p>Unreachable by design (ARCHITECTURE.md §1 cause 2). The engine must detect and report this honestly, not silently skip it.</p><y-card></y-card>
+<script>
+class YCard extends HTMLElement {
+  connectedCallback() {
+    const r = this.attachShadow({mode: 'closed'});
+    r.innerHTML = '<style>p{background:#fff;color:#111;padding:12px;border:1px solid #ccc}</style>' +
+                  '<p>Inside a CLOSED shadow root. No API reaches this.</p>';
+  }
+}
+customElements.define('y-card', YCard);
+</script>
+</body>
+</html>

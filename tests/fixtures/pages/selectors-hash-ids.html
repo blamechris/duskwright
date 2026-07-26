@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Hash-like ids (must be rejected)</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}div{border:1px solid #ddd;padding:10px;margin:8px 0}</style></head>
+<body>
+<h1>Unstable anchors</h1><p>Every id here matches the reject pattern <code>/\d{4,}|[a-f0-9]{8,}/</code> and must <strong>not</strong> be used as a selector anchor — these change on each deploy, and a rule anchored to one silently stops matching.</p><div id='ember12847'>Ember-style generated id</div><div id='a3f9c2e81b4d'>Hex hash id</div><div id='react-select-90210-input'>Indexed generated id</div><div id='mui-1234567'>MUI generated id</div><div id='content'>A genuinely stable id, for contrast — this one is fine</div>
+
+</body>
+</html>

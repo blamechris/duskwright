@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Color picker (must be excluded)</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}.swatches{display:flex;gap:6px;flex-wrap:wrap;max-width:420px}.sw{width:42px;height:42px;border:1px solid #999}</style></head>
+<body>
+<h1>Colour picker</h1><p>Inverting or recoloring this region makes it <em>wrong</em>, not dark. This is the case the <code>exclude</code> treatment exists for.</p><div class='swatches' id='sw'></div><input type='color' value='#3366cc'>
+<script>
+const box = document.getElementById('sw');
+for (let h = 0; h < 360; h += 24) {
+  const d = document.createElement('div');
+  d.className = 'sw';
+  d.setAttribute('style', `background: hsl(${h} 75% 55%)`);
+  box.appendChild(d);
+}
+</script>
+</body>
+</html>

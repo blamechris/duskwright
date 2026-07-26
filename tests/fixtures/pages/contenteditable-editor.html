@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>contenteditable editor</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}#doc{border:1px solid #ccc;padding:16px;min-height:180px;background:#fff}</style></head>
+<body>
+<h1>contenteditable document</h1><p>The editor below serializes its own content. This is the Google Docs failure shape: anything we write inside <code>#doc</code> would be captured into the document model.</p><div id='doc' contenteditable='true'><p style='color:#222'>A paragraph the user typed.</p><p><span style='color:#c00'>Red text</span> and <span style='background:#ff0'>highlighted</span>.</p></div><pre id='serialized'></pre>
+<script>
+const doc = document.getElementById('doc');
+// The app's own model sync — exactly what would capture a stray inline style.
+function serialize() { document.getElementById('serialized').textContent = doc.innerHTML; }
+window.__serializeDoc = () => doc.innerHTML;
+serialize();
+new MutationObserver(serialize).observe(doc, {subtree: true, childList: true, attributes: true, characterData: true});
+</script>
+</body>
+</html>

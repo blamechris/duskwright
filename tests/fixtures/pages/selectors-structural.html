@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Deep structural nesting</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}ul{margin:0;padding-left:18px}li{padding:2px}</style></head>
+<body>
+<h1>Structural fallback</h1><p>No ids, no semantic attributes, no stable classes — the generator must fall through to an <code>:nth-child</code> path anchored at the nearest stable ancestor (<code>#app</code>), not an absolute path from <code>body</code>.</p><div id='app'><div><div><ul><li><span>one</span></li><li><span>two</span></li><li><span>three <em>nested emphasis</em></span></li><li><span>four</span></li></ul></div></div></div>
+
+</body>
+</html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Selector drift on reapply</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}.item{border:1px solid #ddd;padding:8px;margin:6px 0}</style></head>
+<body>
+<h1>Selector drift</h1><p>Press the buttons to change the DOM the way a redeploy would. A stored rule must degrade to a no-op with a notice — never theme the wrong element.</p><button id='mutate'>Rename classes (zero matches)</button> <button id='multiply'>Duplicate rows (over-match)</button><div id='list'><div class='item'>Row A</div><div class='item'>Row B</div></div>
+<script>
+const list = document.getElementById('list');
+document.getElementById('mutate').onclick = () => {
+  [...list.children].forEach((el) => { el.className = 'item-v2-' + Math.floor(Math.random() * 1e6); });
+};
+document.getElementById('multiply').onclick = () => {
+  for (let i = 0; i < 40; i++) {
+    const d = document.createElement('div');
+    d.className = 'item'; d.textContent = 'Row extra ' + i;
+    list.appendChild(d);
+  }
+};
+</script>
+</body>
+</html>

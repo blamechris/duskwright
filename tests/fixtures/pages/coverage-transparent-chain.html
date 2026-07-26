@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Transparent background chain</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}.a{background:#fff;padding:20px}.b{background:transparent;padding:20px}.c{background:rgba(0,0,0,0);padding:20px}.d{padding:20px}</style></head>
+<body>
+<h1>Transparent resolution</h1><p>Luminance sampling must resolve <code>transparent</code> up the ancestor chain rather than treating it as black.</p><div class='a'><div class='b'><div class='c'><div class='d'>Effective background here is the white ancestor, four levels up.</div></div></div></div>
+
+</body>
+</html>

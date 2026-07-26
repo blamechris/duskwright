@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>WebGL canvas</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}canvas{border:1px solid #ccc}</style></head>
+<body>
+<h1>WebGL</h1><p>GPU-rendered, no DOM text at all. Compositing is the only mechanism that can touch this.</p><canvas id='gl' width='480' height='240'></canvas>
+<script>
+const gl = document.getElementById('gl').getContext('webgl');
+if (gl) { gl.clearColor(0.95, 0.95, 0.97, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+</script>
+</body>
+</html>

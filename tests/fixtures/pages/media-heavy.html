@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Media counter-filter</title>
+<style>body{background:#fff;color:#111;font:16px system-ui;margin:0;padding:24px}img,canvas{border:1px solid #ccc;margin:8px}.bgimg{width:200px;height:120px;display:inline-block;border:1px solid #ccc}</style></head>
+<body>
+<h1>Media</h1><p>Under a Tier 2 scoped filter, everything here needs a counter-filter or it renders inverted. Getting this wrong is what users report as "the extension is broken".</p><img id='png' width='160' height='120' alt='gradient'><canvas id='cv' width='160' height='120'></canvas><div class='bgimg' id='bg'></div><svg width='160' height='120'><rect width='160' height='120' fill='#e04040'/><circle cx='80' cy='60' r='40' fill='#4060e0'/></svg>
+<script>
+// Self-contained image: a data-URI gradient, so no network dependency.
+const c = document.createElement('canvas'); c.width = 160; c.height = 120;
+const g = c.getContext('2d').createLinearGradient(0, 0, 160, 120);
+g.addColorStop(0, '#ff8a00'); g.addColorStop(1, '#0066ff');
+const cx = c.getContext('2d'); cx.fillStyle = g; cx.fillRect(0, 0, 160, 120);
+const url = c.toDataURL();
+document.getElementById('png').src = url;
+document.getElementById('bg').setAttribute('style', `background-image:url(${url});background-size:cover`);
+const cv = document.getElementById('cv').getContext('2d');
+cv.fillStyle = '#22aa55'; cv.fillRect(0, 0, 160, 120);
+cv.fillStyle = '#fff'; cv.font = '14px system-ui'; cv.fillText('canvas', 10, 24);
+</script>
+</body>
+</html>

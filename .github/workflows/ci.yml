@@ -53,31 +53,75 @@ jobs:
           fi
 
       - name: No attribution trailers in commits
-        if: github.event_name == 'pull_request'
         run: |
-          # The place a Co-Authored-By trailer actually lands. Scan only this PR's commits.
-          # The policy bans the trailer outright — no Claude, no other agent, no human
-          # co-author — so this matches any Co-Authored-By, not a name list.
+          # The place a Co-Authored-By trailer actually lands. The policy bans the trailer
+          # outright — no Claude, no other agent, no human co-author — so this matches any
+          # Co-Authored-By, not a name list.
+          #
+          # This step runs on BOTH triggers. It used to be pull_request-only, which meant it
+          # went silent on push-to-main — the exact moment code lands, and the moment a
+          # GitHub-generated squash-merge commit can carry Co-authored-by trailers harvested
+          # from the branch. A gate that skips the event it exists to guard is not a gate.
           set -euo pipefail
-          BASE="origin/${{ github.base_ref }}"
-          git fetch --quiet origin "${{ github.base_ref }}"
+
+          if [ "${{ github.event_name }}" = 'pull_request' ]; then
+            BASE="origin/${{ github.base_ref }}"
+            git fetch --quiet origin "${{ github.base_ref }}"
+            # Scan the PR branch tip, NOT HEAD. On a pull_request event actions/checkout
+            # checks out GitHub's synthetic merge commit, whose FIRST parent is the base
+            # branch — so --first-parent from HEAD walks the base side and inspects none of
+            # our commits. It reported "scanning 1 commit" and passed while examining nothing.
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            # push: scan what this push actually added. `before` is all-zeroes for a new
+            # branch or a force-push, in which case fall back to the tip commit alone.
+            BASE="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+              BASE="$HEAD_SHA~1"
+              git cat-file -e "$BASE^{commit}" 2>/dev/null || BASE="$HEAD_SHA"
+            fi
+          fi
+
+          if ! git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null; then
+            echo "::error::$HEAD_SHA is not present locally — nothing was scanned"; exit 1
+          fi
 
           # Resolve the range explicitly and FAIL if we cannot. Piping git straight into
           # grep hides git's own failure: the pipeline takes grep's status, "no match" is
           # exit 1, and the `if` reads that as clean. A gate that cannot fail is not a gate.
-          if ! MERGE_BASE=$(git merge-base "$BASE" HEAD 2>/dev/null); then
+          if [ "$BASE" = "$HEAD_SHA" ]; then
+            MERGE_BASE="$HEAD_SHA~1"
+            git cat-file -e "$MERGE_BASE^{commit}" 2>/dev/null || MERGE_BASE=""
+          elif ! MERGE_BASE=$(git merge-base "$BASE" "$HEAD_SHA" 2>/dev/null); then
             echo "::error::cannot resolve $BASE — the commit range was not scanned. \
           This check must not pass without inspecting history (is fetch-depth 0?)."
             exit 1
           fi
 
-          COMMITS=$(git rev-list --count "$MERGE_BASE..HEAD")
-          echo "scanning $COMMITS commit(s) from $MERGE_BASE to HEAD"
+          # Root commit: no range to walk, so scan the single commit's own message.
+          if [ -z "$MERGE_BASE" ]; then
+            echo "scanning the root commit $HEAD_SHA"
+            if git log -1 "$HEAD_SHA" --format='%B' | grep -niE '^[[:space:]]*co-authored-by:'; then
+              echo "::error::Co-Authored-By trailer found — see CLAUDE.md"; exit 1
+            fi
+            echo "no attribution trailers found"; exit 0
+          fi
+
+          # --first-parent follows only our own mainline. A vendor merge (the E1 fork ingest
+          # brought in 10,159 upstream commits) appears as a single commit rather than its
+          # whole history, so we scan what WE authored. Upstream's contributors legitimately
+          # use Co-authored-by trailers; the policy governs our commits, and rewriting an
+          # imported history to satisfy it would be both absurd and dishonest.
+          COMMITS=$(git rev-list --count --first-parent "$MERGE_BASE..$HEAD_SHA")
+          echo "scanning $COMMITS first-parent commit(s) from $MERGE_BASE to $HEAD_SHA"
+          git log --first-parent --oneline "$MERGE_BASE..$HEAD_SHA" | sed 's/^/  /'
           if [ "$COMMITS" -eq 0 ]; then
             echo "::error::resolved an empty commit range — refusing to report clean"; exit 1
           fi
 
-          TRAILERS=$(git log "$MERGE_BASE..HEAD" --format='%B' \
+          TRAILERS=$(git log --first-parent "$MERGE_BASE..$HEAD_SHA" --format='%B' \
                        | grep -niE '^[[:space:]]*co-authored-by:' || true)
           if [ -n "$TRAILERS" ]; then
             echo "$TRAILERS"

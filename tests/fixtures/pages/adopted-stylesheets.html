@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>adoptedStyleSheets page</title>
+<style>body{font:16px system-ui;margin:0;padding:24px}</style></head>
+<body>
+<h1>Constructed stylesheets</h1><p class='themed'>Styled entirely via <code>document.adoptedStyleSheets</code>. Our own sheet must be appended, never assigned over the array — a page holding a reference to it must still see that reference intact.</p><div id='probe'></div>
+<script>
+const sheet = new CSSStyleSheet();
+sheet.replaceSync('body{background:#fff;color:#111}.themed{background:#eef;padding:12px}');
+document.adoptedStyleSheets.push(sheet);
+// The page keeps a live reference. If anything reassigns the array, this detaches.
+window.__pageAdoptedRef = document.adoptedStyleSheets;
+window.__pageSheetCount = document.adoptedStyleSheets.length;
+</script>
+</body>
+</html>

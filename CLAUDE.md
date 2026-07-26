@@ -135,12 +135,16 @@ ARCHITECTURE.md           Design of record. Left unedited; ADRs are the diff aga
 
 ```bash
 npm ci                    # install
-npm run build             # build the extension (Chrome MV3)
-npm test                  # Vitest unit tests
-npm run test:purity       # Playwright purity harness — the blocking gate
-npm run test:e2e          # Playwright end-to-end
-npm run lint              # ESLint + Prettier
+npm run build             # build the extension (Chromium MV2 + MV3)
+npm test                  # Jest unit tests (upstream's; 75 passing)
+npm run test:purity       # Playwright purity harness — the blocking gate (lands in E2)
+npm run test:e2e          # Playwright end-to-end (lands in E2+)
+npm run lint              # ESLint
 ```
+
+Unit tests are **Jest**, not Vitest — upstream already has a working Jest suite and running two
+runners would split the suite for no gain (ADR 0003 D4). Playwright is still what E2 adds for the
+purity harness and E2E, since upstream has no equivalent.
 
 Load unpacked from the build output directory in `chrome://extensions` with Developer Mode on.
 

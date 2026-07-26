@@ -1,0 +1,8 @@
+/* Served from a second origin so the fixture page's sheet.cssRules access throws
+   SecurityError — ARCHITECTURE.md §1 cause 1. Deliberately not CORS-permissive. */
+.remote {
+    background: #ffffff;
+    color: #111111;
+    border: 2px solid #cc4444;
+    padding: 16px;
+}
