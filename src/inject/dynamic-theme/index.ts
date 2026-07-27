@@ -546,13 +546,18 @@ function stopWatchingForUpdates() {
     cleanReadyStateCompleteListeners();
 }
 
-let metaObserver: MutationObserver;
+let metaObserver: MutationObserver | null = null;
 let headObserver: MutationObserver | null = null;
 
 function addMetaListener() {
+    // Idempotent. Upstream relied on the page <meta> marker to make the caller below
+    // early-return on a second call, so this was only ever reached once. Item 10 removed that
+    // marker, which quietly made a second call reachable — and reassigning without
+    // disconnecting would leak an observer and double every callback.
+    metaObserver?.disconnect();
     metaObserver = new MutationObserver(() => {
         if (document.querySelector('meta[name="darkreader-lock"]')) {
-            metaObserver.disconnect();
+            metaObserver?.disconnect();
             removeDynamicTheme();
         }
     });
@@ -588,8 +593,13 @@ function isDRLocked() {
 
 function isAnotherDarkReaderInstanceActive() {
     // Another instance of US, coordinated through the shared isolated world.
-    if (window.__duskwrightInstance && window.__duskwrightInstance !== INSTANCE_ID) {
-        return true;
+    if (window.__duskwrightInstance) {
+        if (window.__duskwrightInstance !== INSTANCE_ID) {
+            return true;
+        }
+        // Already registered as this instance. Upstream got this early-return from finding
+        // its own <meta> marker; that marker is gone, so the state check has to provide it.
+        return false;
     }
     // A foreign instance (e.g. a real Dark Reader install) still announces itself in page
     // DOM. Reading that is pure, and standing down is the polite behaviour.
