@@ -8,10 +8,11 @@
 ## Context
 
 ADR 0001 catalogued fourteen page-DOM mutations and prescribed the replacement for the worst of
-them (items 1–4, the P0 Google Sheets failure) in decision 2:
+them (items 1–4, the P0 Google Sheets failure). Its decision 2, taken together with the replacement
+note on items 1–3, amounts to (paraphrased — see `0001` for the exact text):
 
-> The replacement for items 1–4 is **one** selector-emission engine shared with the picker.
-> Generate a structural CSS selector per inline-styled element and emit a rule into our own sheet.
+> One selector-emission engine, shared with the picker, not two implementations. Generate a
+> structural CSS selector per inline-styled element and emit a rule into our own sheet.
 
 That was written from reading the source, not from measuring it. Measuring it disqualifies it.
 
@@ -36,7 +37,9 @@ The unique-id arm is flat. That arm is unavailable to us by construction.
 
 Cost per (element × colliding rule): **22.4 ns** unthrottled, **96.9 ns** at 4× CPU throttle.
 Against `ARCHITECTURE.md` §9's 100 ms budget the crossover is **M ≈ 2,112** unthrottled,
-**≈ 1,016** throttled — and it is paid on *every* full style pass, not once.
+**≈ 1,016** throttled. Note that §9's budget is a *one-time* first-contentful-paint number while
+this cost recurs on **every** full style pass, so the comparison is conservative — a recurring cost
+that exhausts a one-shot budget is worse than the arithmetic suggests, not better.
 
 ### 2. The finding that actually settles it: we would tax the page's own DOM operations
 
@@ -74,15 +77,73 @@ declaration string*, matched with an attribute selector anchored at a stable anc
 ```
 
 Elements sharing a declaration share a rule. Rule count becomes the number of **distinct
-declarations**, which on real pages is far smaller than the element count. Key derivation measured
-at **0.31 µs/element** — an order of magnitude cheaper than the write path it replaces.
+declarations**, which on real pages is far smaller than the element count. Key derivation was
+prototyped at ~0.31 µs/element — a projection for unwritten code, not a reproducible measurement
+like the two above, and it predates the three corrections below, which cost more than a substring
+split.
+
+### Three things that make the naive form of this wrong
+
+Review found all three, and each is confirmed in a real browser. They do not change the strategy;
+they change what a key *is*. Getting these wrong ships silent mis-theming, so they are stated here
+rather than left for an implementer to rediscover.
+
+**1. The attribute text is not stable, and often never contains what you expect.** Chromium
+re-serializes the *entire* `style` attribute to canonical form on any CSSOM write — including a
+write to an unrelated property:
+
+```js
+el.setAttribute('style', 'color:#333;background:#fff');  // "color:#333;background:#fff"
+el.style.fontWeight = 'bold';                            // "color: rgb(51, 51, 51); background: rgb(255, 255, 255); font-weight: bold;"
+el2.style.color = '#333';                                // "color: rgb(51, 51, 51);"  — literal hex NEVER appears
+```
+
+Any element styled through the CSSOM — which is how essentially every framework binds styles —
+carries `rgb()` from the first read. A key derived from literal hex matches nothing.
+
+Mitigation: derive keys from the attribute **as it currently reads**, and treat the style-attribute
+observer as load-bearing rather than incidental — a canonicalization event mutates the attribute,
+fires the observer, and we re-key. That makes it self-healing within a frame instead of permanently
+broken, but it is not free: both serializations of the same logical declaration can coexist across
+a page, so **the key table can carry two entries per declaration**, which eats directly into the
+tier-4 escalation budget. The budget must be computed against observed keys, not distinct
+declarations.
+
+**2. `*=` cross-matches the whole `*-color` family.** `[style*="color:#333"]` matches all of these:
+
+| attribute | matches? | |
+|---|---|---|
+| `color:#333` | yes | intended |
+| `border-color:#3336` | **yes** | has no `color` declaration at all |
+| `background-color:#333333` | **yes** | " |
+| `caret-color:#3339` | **yes** | " |
+
+`border-color`, `background-color`, `outline-color`, `caret-color`, `text-decoration-color`, and
+`column-rule-color` all literally contain `color:`. A bare `*=` rule setting `color` would recolor
+text on elements that never declared it.
+
+Mitigation: the emitted selector must anchor to a declaration boundary — a start-anchored `^=` form
+plus separator-prefixed `*=` forms — not one bare `*=`. That means **a small set of alternates per
+key**, which raises the rule count per key above one and again feeds the budget.
+
+**3. Declaration values legitimately contain `;`, so `String.split(';')` is wrong.** Demonstrated on
+`media-heavy.html`, one of this ADR's own cited fixtures — its `background-image` carries a
+`data:image/png;base64,…` URI, and a naive split shreds one real declaration into two unusable
+fragments:
+
+```
+background-image:url(data:image/pn  |  base64,iVBORw0KGgoAAAANSUhEUgAAAAQ…  |  background-size:cover
+```
+
+Mitigation: a CSS-value-aware splitter that respects `url()`, quoted strings, and parens. Unit-test
+it against `media-heavy.html`'s actual attribute.
 
 Where that does not hold, escalate rather than degrade silently:
 
 | Tier | Mechanism | For |
 |---|---|---|
-| 1 | Anchored declaration keys | The default. Covers 8 of the 9 currently-violating fixtures at full dynamic-theme fidelity |
-| 2 | Presentational attribute keys (`bgcolor`, `color`, `background`) | Legacy attributes |
+| 1 | Anchored declaration keys | The default. Tiers 1+2 together cover 8 of the 9 currently-violating fixtures at full dynamic-theme fidelity |
+| 2 | Presentational attribute keys — `bgcolor`, `color`, `background`, **and SVG `fill`/`stroke`** | Legacy and SVG presentation attributes. `svg-heavy.html` and `media-heavy.html` use plain hex `fill=`/`stroke=`, not the `style` attribute; those key here, not at tier 3. Tier 3's SVG exception is only for fills that need element geometry to resolve |
 | 3 | Per-element structural selectors, **hard-capped at 64 elements** | The four declaration shapes that provably cannot be keyed: `var()` values, SVG `fill` needing geometry, duplicate properties in one attribute, `background-image: url()` on `<html>`/`<body>` |
 | 4 | Scoped container filter | Regions whose key table blows the budget. O(1), and measured to cost the page nothing |
 
@@ -151,7 +212,10 @@ disappearance is the single best evidence this design works.
 | 1 | Tier 4's raster cost unmeasured; if the filter is expensive, step 4's answer is wrong | Headful Chrome, GPU raster, real frame-timing trace — **before** step 4 |
 | 2 | Key explosion on unseen real sites (syntax highlighters, heatmaps, chart libraries). `dense-inline-styles.html` dedups only 3.2% — 1,936 keys over 2,000 elements | Real-site smoke list through the key deriver, offline |
 | 3 | The budget caps key *count*, not key *arrival rate* — a page adding one novel declaration per frame pays a style flush per key while under any count cap | New fixture `key-arrival-rate.html` with a frame-p95 assertion |
-| 4 | Anchored-key correctness bugs are silent partial theming: a trailing `;` breaks `$=`, plus whitespace, case, `!important`, and quote escaping | `tests/unit/purity/keys.test.ts` — all cheap, no excuse for shipping without them |
+| 4 | **Key instability under CSSOM canonicalization** — confirmed. Theming silently stops for a frame whenever the page touches its own style object, and the key table can carry two serializations of one declaration, inflating the tier-4 budget | A fixture where an element's style is set by `setAttribute`, then an *unrelated* property written via CSSOM; assert theming survives and the key count is accounted for |
+| 4a | **`*=` cross-matching the `*-color` family** — confirmed. A `color` rule recolours elements that only declared `border-color`/`background-color`/`caret-color` | A fixture pairing `color:` with a sibling `*-color:` sharing a value prefix; assert only the former is themed |
+| 4b | **Value-internal `;` breaking key derivation** — confirmed on `media-heavy.html`'s `data:` URI | `tests/unit/purity/keys.test.ts` asserting that attribute derives exactly one key |
+| 4c | Remaining key-correctness bugs: whitespace, case, `!important`, quote escaping | `tests/unit/purity/keys.test.ts` — all cheap, no excuse for shipping without them |
 | 5 | `@scope` + eviction un-theme elements *outside* a filtered region sharing a declaration with one inside | `scoped-region-shared-key.html` |
 
 ## Open questions — product-shaped, for the maintainer
