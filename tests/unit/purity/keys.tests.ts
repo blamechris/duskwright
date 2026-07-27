@@ -195,6 +195,25 @@ describe('cross-property collisions (risk 4a)', () => {
     });
 });
 
+describe('non-ASCII values', () => {
+    // Raised in review: the split indices are UTF-16 code units, not bytes. They are produced
+    // and consumed by the same string API, so this works — asserted rather than argued.
+    it('keeps multi-byte values intact and anchors them correctly', () => {
+        const attr = 'font-family:"\u65E5\u672C\u8A9E";color:#333';
+        const d = parseInlineDeclarations(attr);
+        expect(d.map((x) => x.property)).toEqual(['font-family', 'color']);
+        expect(d[0].value).toBe('"\u65E5\u672C\u8A9E"');
+        expect(declarationSelector(d[1])).toBe('[style$=";color:#333"]');
+    });
+
+    it('handles emoji, which are surrogate pairs', () => {
+        const attr = 'content:"\uD83C\uDF19";color:#333';
+        const d = parseInlineDeclarations(attr);
+        expect(d.map((x) => x.property)).toEqual(['content', 'color']);
+        expect(d[0].value).toBe('"\uD83C\uDF19"');
+    });
+});
+
 describe('escapeCSSString', () => {
     it('escapes backslashes and double quotes', () => {
         expect(escapeCSSString('a"b')).toBe('a\\"b');

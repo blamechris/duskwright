@@ -52,7 +52,9 @@ const QUOTE = /['"]/;
  * Split a `style` attribute into declarations, respecting quoted strings, parentheses
  * (so `url(data:…;base64,…)` survives), and CSS comments.
  *
- * Returns the byte range of each declaration so the caller can compute exact boundaries.
+ * Returns the index range of each declaration (UTF-16 code units, as JS string indices —
+ * not bytes) so the caller can compute exact boundaries. Non-ASCII values are safe because
+ * every index here is produced and consumed by the same string API.
  */
 function splitDeclarations(attr: string): Array<{start: number; end: number}> {
     const spans: Array<{start: number; end: number}> = [];
