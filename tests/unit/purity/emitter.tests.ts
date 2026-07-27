@@ -141,10 +141,10 @@ describe('InlineRuleEmitter', () => {
             expect(e.hasChanges).toBe(true);
             e.markClean();
 
-            e.update(el(), 'color:#333');       // shares the existing rule
-            expect(e.hasChanges).toBe(false);   // nothing to re-emit
+            e.update(el(), 'color:#333'); // shares the existing rule
+            expect(e.hasChanges).toBe(false); // nothing to re-emit
 
-            e.update(el(), 'color:#999');       // new rule
+            e.update(el(), 'color:#999'); // new rule
             expect(e.hasChanges).toBe(true);
         });
     });
