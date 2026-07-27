@@ -25,6 +25,7 @@ import {filterSelectors, cleanFilterSelectors, addFilterSelector} from './select
 import type {StyleElement, StyleManager} from './style-manager';
 import {manageStyle, getManageableStyles, cleanLoadingLinks, setIgnoredCSSURLs} from './style-manager';
 import {injectProxy} from './stylesheet-proxy';
+import {resolveSchemeSelectors} from '../../purity/scheme-selectors';
 import {variablesStore} from './variables';
 import {watchForStyleChanges, stopWatchingForStyleChanges} from './watch';
 
@@ -307,7 +308,7 @@ function createShadowStaticStyleOverrides(root: ShadowRoot) {
 }
 
 function replaceCSSTemplates($cssText: string) {
-    return $cssText.replace(/\${(.+?)}/g, (_, $color) => {
+    return resolveSchemeSelectors($cssText, theme!.mode ? 'dark' : 'dimmed').replace(/\${(.+?)}/g, (_, $color) => {
         const color = parseColorWithCache($color);
         if (color) {
             const lightness = getSRGBLightness(color.r, color.g, color.b);
@@ -558,11 +559,27 @@ function addMetaListener() {
     metaObserver.observe(document.head, {childList: true, subtree: true});
 }
 
+// ADR 0001 item 10. Upstream used page DOM as an IPC channel between extension instances:
+// it appended <meta name="darkreader" content=INSTANCE_ID> to announce itself, and a
+// transient <meta name="darkreader-lock"> to tell an older instance to stand down. Both are
+// insertions into page-owned <head>, and a page MutationObserver fires on each — including
+// on the lock's insert AND its removal a microtask later, which is exactly the transient
+// violation a before/after snapshot cannot see (ADR 0002 C4).
+//
+// Two instances of THIS extension share one isolated world, so they can coordinate through
+// module state with no page involvement at all. That is what the marker is replaced with.
+//
+// Reading the page for a foreign marker is kept and is not a violation: reads are pure, and
+// it is how we still detect a real Dark Reader install and stand down rather than
+// double-theming. We just no longer write our own.
+declare global {
+    interface Window {
+        __duskwrightInstance?: string;
+    }
+}
+
 function createDarkReaderInstanceMarker() {
-    const metaElement: HTMLMetaElement = document.createElement('meta');
-    metaElement.name = 'darkreader';
-    metaElement.content = INSTANCE_ID;
-    document.head.appendChild(metaElement);
+    window.__duskwrightInstance = INSTANCE_ID;
 }
 
 function isDRLocked() {
@@ -570,6 +587,12 @@ function isDRLocked() {
 }
 
 function isAnotherDarkReaderInstanceActive() {
+    // Another instance of US, coordinated through the shared isolated world.
+    if (window.__duskwrightInstance && window.__duskwrightInstance !== INSTANCE_ID) {
+        return true;
+    }
+    // A foreign instance (e.g. a real Dark Reader install) still announces itself in page
+    // DOM. Reading that is pure, and standing down is the polite behaviour.
     const meta: HTMLMetaElement | null = document.querySelector('meta[name="darkreader"]');
     if (meta) {
         if (meta.content !== INSTANCE_ID) {
@@ -597,13 +620,11 @@ function interceptOldScript({success, failure}: {success: () => void; failure: (
         return;
     }
 
-    const lock = document.createElement('meta');
-    lock.name = 'darkreader-lock';
-    document.head.append(lock);
-    queueMicrotask(() => {
-        lock.remove();
-        success();
-    });
+    // The lock <meta> is gone. It existed to signal an older instance of the same extension
+    // to stop, and same-extension instances now share isolated-world state, so the signal
+    // needs no page involvement. A foreign instance was never obliged to honour it anyway.
+    window.__duskwrightInstance = INSTANCE_ID;
+    queueMicrotask(success);
 }
 
 function disableConflictingPlugins() {
@@ -750,8 +771,9 @@ export function createOrUpdateDynamicThemeInternal(themeConfig: Theme, dynamicTh
     const ready = () => {
         const success = () => {
             disableConflictingPlugins();
-            document.documentElement.setAttribute('data-darkreader-mode', 'dynamic');
-            document.documentElement.setAttribute('data-darkreader-scheme', theme!.mode ? 'dark' : 'dimmed');
+            // ADR 0001 item 7: data-darkreader-mode / -scheme used to be written onto <html>
+            // here. <html> is page-owned. The scheme is now resolved statically into our own
+            // catalog CSS (resolveSchemeSelectors), and nothing read the mode attribute.
             createThemeAndWatchForUpdates();
         };
 
@@ -885,8 +907,7 @@ function setupDocumentPiPFontFix(): void {
 }
 
 export function removeDynamicTheme(): void {
-    document.documentElement.removeAttribute(`data-darkreader-mode`);
-    document.documentElement.removeAttribute(`data-darkreader-scheme`);
+    // Nothing to un-write here any more: the theme no longer marks <html>.
     cleanDynamicThemeCache();
     removeNode(document.querySelector('.darkreader--fallback'));
     if (document.head) {
