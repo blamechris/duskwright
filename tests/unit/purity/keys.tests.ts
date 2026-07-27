@@ -3,6 +3,8 @@ import {
     declarationSelector,
     declarationKey,
     escapeCSSString,
+    isTier1Safe,
+    tier1Declarations,
 } from '../../../src/purity/inline/keys';
 
 // These tests are the detectors ADR 0004 risks 4, 4a and 4b name. Each of the three holes was
@@ -247,5 +249,92 @@ describe('declarationKey', () => {
         const literal = parseInlineDeclarations('color:#333')[0];
         const canonical = parseInlineDeclarations('color: rgb(51, 51, 51);')[0];
         expect(declarationKey(literal)).not.toBe(declarationKey(canonical));
+    });
+});
+
+
+// Both of these were found in review and confirmed in a real browser. Each produces a key
+// that is sound-looking but wrong — the silent mis-theming class.
+describe('un-keyable shapes', () => {
+    describe('duplicate properties', () => {
+        // `color:#333;color:#444` renders #444, but the DEAD `color:#333` derives
+        // `[style^="color:#333;"]`, which also matches an element whose `color:#333` is live.
+        // Browser-confirmed: rgb(68,68,68) and rgb(51,51,51), both matching that selector.
+        it('marks every declaration of a duplicated property', () => {
+            const d = parseInlineDeclarations('color:#333;color:#444');
+            expect(d.map((x) => x.unkeyable)).toEqual(['duplicate', 'duplicate']);
+        });
+
+        it('marks only the duplicated property, not its neighbours', () => {
+            const d = parseInlineDeclarations('color:#333;background:#fff;color:#444');
+            expect(d.map((x) => [x.property, x.unkeyable])).toEqual([
+                ['color', 'duplicate'],
+                ['background', null],
+                ['color', 'duplicate'],
+            ]);
+        });
+
+        it('treats differing case as the same property', () => {
+            const d = parseInlineDeclarations('COLOR:#333;color:#444');
+            expect(d.every((x) => x.unkeyable === 'duplicate')).toBe(true);
+        });
+    });
+
+    describe('var() values', () => {
+        // Same literal text, different inherited --x, different rendered colour, same key.
+        // Browser-confirmed: rgb(17,17,17) vs rgb(238,238,238), both matching.
+        it('marks a value containing var()', () => {
+            expect(parseInlineDeclarations('color:var(--x)')[0].unkeyable).toBe('variable');
+            expect(parseInlineDeclarations('color:rgb(var(--r),0,0)')[0].unkeyable).toBe('variable');
+        });
+
+        it('does not mark a literal "var(" inside a string', () => {
+            const [d] = parseInlineDeclarations('content:"var(--x)"');
+            expect(d.unkeyable).toBeNull();
+        });
+
+        it('does not mark an unrelated property whose name contains var', () => {
+            expect(parseInlineDeclarations('--variant:1')[0].unkeyable).toBeNull();
+        });
+    });
+
+    describe('tier-1 gating', () => {
+        it('rejects the whole attribute when any declaration is un-keyable', () => {
+            // The colliding selector is derived FROM one of these declarations, so
+            // cherry-picking the safe ones out still leaves the collision.
+            expect(isTier1Safe('color:#333;color:#444')).toBe(false);
+            expect(isTier1Safe('color:var(--x);background:#fff')).toBe(false);
+            expect(tier1Declarations('color:#333;color:#444')).toEqual([]);
+        });
+
+        it('accepts an ordinary attribute', () => {
+            expect(isTier1Safe('color:#333;background:#fff')).toBe(true);
+            expect(tier1Declarations('color:#333;background:#fff')).toHaveLength(2);
+        });
+    });
+});
+
+describe('escapeCSSString — the newline family', () => {
+    // CR and FF are normalized to LF during CSS input preprocessing and are equally fatal
+    // inside a string. Escaping only LF produced a selector that threw SyntaxError from
+    // .matches(), reachable from any page via setAttribute.
+    // Each escapes to its OWN code point. Collapsing CR and FF onto \A is syntactically
+    // valid but lossy: the selector then looks for a newline the attribute does not contain
+    // and matches nothing. A real browser caught that; this simulation could not.
+    it.each([
+        ['newline', '\n', 'A'],
+        ['carriage return', '\r', 'D'],
+        ['form feed', '\f', 'C'],
+    ])('escapes %s to its own code point', (_name, ch, hex) => {
+        expect(escapeCSSString(`a:1${ch}b:2`)).toBe(`a:1\\${hex} b:2`);
+    });
+
+    it('escapes CRLF as two distinct code points', () => {
+        expect(escapeCSSString('a:1\r\nb:2')).toBe('a:1\\D \\A b:2');
+    });
+
+    it('leaves the resulting selector free of raw control characters', () => {
+        const [d] = parseInlineDeclarations('content:"x"');
+        expect(declarationSelector(d)).not.toMatch(/[\n\r\f]/);
     });
 });

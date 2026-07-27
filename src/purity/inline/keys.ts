@@ -44,6 +44,27 @@ export interface Declaration {
     fragment: string;
     /** Attribute-selector operator implied by where the fragment sits in the attribute. */
     operator: '=' | '^=' | '$=' | '*=';
+    /**
+     * Why this declaration cannot be keyed at tier 1, or null when it can.
+     *
+     * A key is only sound when "same fragment" implies "same rendered result". Two shapes
+     * break that implication, and both were confirmed in a browser:
+     *
+     *   'duplicate'  The attribute declares this property more than once, so all but the
+     *                last are dead. `color:#333;color:#444` renders #444 — yet the dead
+     *                `color:#333` derives `[style^="color:#333;"]`, which ALSO matches an
+     *                element whose `color:#333` is live. Keying either one repaints the other.
+     *
+     *   'variable'   The value contains `var()`, so the rendered colour depends on inherited
+     *                custom properties, not on the text. Two elements with byte-identical
+     *                `color:var(--x)` rendered rgb(17,17,17) and rgb(238,238,238) while both
+     *                matching the same selector.
+     *
+     * ADR 0004 already routes both to tier 3 (per-element structural selectors, hard-capped).
+     * Surfacing it here is what lets the caller actually do that instead of silently emitting
+     * a colliding key.
+     */
+    unkeyable: 'duplicate' | 'variable' | null;
 }
 
 const QUOTE = /['"]/;
@@ -138,9 +159,63 @@ export function parseInlineDeclarations(attr: string): Declaration[] {
         const operator: Declaration['operator'] =
             atStart && atEnd ? '=' : atStart ? '^=' : atEnd ? '$=' : '*=';
 
-        out.push({property, value, important, fragment, operator});
+        out.push({property, value, important, fragment, operator, unkeyable: null});
+    }
+
+    // A second pass, because "declared more than once" is a property of the whole attribute
+    // and cannot be decided while parsing a single declaration.
+    const counts = new Map<string, number>();
+    for (const d of out) {
+        counts.set(d.property, (counts.get(d.property) ?? 0) + 1);
+    }
+    for (const d of out) {
+        if (counts.get(d.property)! > 1) {
+            d.unkeyable = 'duplicate';
+        } else if (containsVar(d.value)) {
+            d.unkeyable = 'variable';
+        }
     }
     return out;
+}
+
+/** `var(` at the top level of a value, not inside a string. */
+function containsVar(value: string): boolean {
+    if (!value.includes('var(')) {
+        return false;
+    }
+    let quote: string | null = null;
+    for (let i = 0; i < value.length; i++) {
+        const c = value[i];
+        if (quote) {
+            if (c === '\\') {
+                i++;
+            } else if (c === quote) {
+                quote = null;
+            }
+        } else if (QUOTE.test(c)) {
+            quote = c;
+        } else if (value.startsWith('var(', i)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Can every declaration in this attribute be keyed at tier 1?
+ *
+ * The unit is the ATTRIBUTE, not the declaration: a duplicate makes the whole attribute
+ * suspect, because the colliding selector is derived from one of its declarations. The caller
+ * should route the element to tier 3 rather than cherry-pick the safe declarations out of it.
+ */
+export function isTier1Safe(attr: string): boolean {
+    return parseInlineDeclarations(attr).every((d) => d.unkeyable === null);
+}
+
+/** The declarations of `attr` that are safe to key, i.e. none if any of them is not. */
+export function tier1Declarations(attr: string): Declaration[] {
+    const all = parseInlineDeclarations(attr);
+    return all.some((d) => d.unkeyable !== null) ? [] : all;
 }
 
 /** Remove CSS comments, leaving string contents alone. */
@@ -202,14 +277,23 @@ function findTopLevelColon(text: string): number {
 /**
  * Escape a string for use inside a double-quoted CSS attribute-selector value.
  *
- * Only `\` and `"` need escaping; newlines cannot appear in an attribute value that the
- * parser gave us, but are escaped defensively because a hand-built fragment could contain one.
+ * `\` and `"` obviously need escaping. So does the whole newline family — CR and FF are
+ * normalized to LF during CSS input preprocessing and are just as fatal inside a string, and
+ * an earlier version of this escaped only LF, which made `setAttribute('style', 'a:1\rb:2')`
+ * produce a selector that threw `SyntaxError` from `.matches()`. That is reachable from any
+ * page, so it is a real crash, not a theoretical one.
+ *
+ * Each is escaped to its OWN code point, not collapsed onto LF. An earlier version mapped
+ * CR and FF both to `\\A ` (LF); that was syntactically valid but lossy — the selector then
+ * looked for a newline the attribute did not contain, so it matched nothing. A real browser
+ * caught that; the TypeScript simulation could not.
  */
 export function escapeCSSString(value: string): string {
     return value
         .replace(/\\/g, '\\\\')
         .replace(/"/g, '\\"')
-        .replace(/\n/g, '\\A ');
+        // \n -> \A, \r -> \D, \f -> \C. The trailing space terminates the hex escape.
+        .replace(/[\n\r\f]/g, (c) => `\\${c.charCodeAt(0).toString(16).toUpperCase()} `);
 }
 
 /**
