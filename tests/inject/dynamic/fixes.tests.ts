@@ -20,13 +20,16 @@ afterEach(() => {
 });
 
 describe('FIXES', () => {
-    it('should add custom attributes to root element', () => {
+    // Inverted rather than deleted. Upstream asserted these attributes are WRITTEN; ADR 0001
+    // items 7-8 removed them because <html> is page-owned. Keeping the test as a negative
+    // guard means nobody can reintroduce the write without a test going red.
+    it('should not write custom attributes to the root element', () => {
         createOrUpdateDynamicTheme(DEFAULT_THEME, null, false);
-        expect(document.documentElement.getAttribute(`data-darkreader-mode`)).toBe('dynamic');
-        expect(document.documentElement.getAttribute('data-darkreader-scheme')).toBe('dark');
+        expect(document.documentElement.hasAttribute('data-darkreader-mode')).toBe(false);
+        expect(document.documentElement.hasAttribute('data-darkreader-scheme')).toBe(false);
 
         createOrUpdateDynamicTheme({...DEFAULT_THEME, mode: FilterMode.light}, null, false);
-        expect(document.documentElement.getAttribute('data-darkreader-scheme')).toBe('dimmed');
+        expect(document.documentElement.hasAttribute('data-darkreader-scheme')).toBe(false);
     });
 
     it('should invert selectors', async () => {

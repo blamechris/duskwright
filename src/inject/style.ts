@@ -1,10 +1,11 @@
 import {createNodeAsap, removeNode} from './utils/dom';
 
-export function createOrUpdateStyle(css: string, type: string): void {
+export function createOrUpdateStyle(css: string, _type: string): void {
     createNodeAsap({
         selectNode: () => document.getElementById('dark-reader-style')!,
         createNode: (target) => {
-            document.documentElement.setAttribute('data-darkreader-mode', type);
+            // ADR 0001 item 8: data-darkreader-mode was written onto <html> here. Nothing
+            // read it, and <html> is page-owned.
             const style = document.createElement('style');
             style.id = 'dark-reader-style';
             style.classList.add('darkreader');
@@ -29,5 +30,4 @@ export function createOrUpdateStyle(css: string, type: string): void {
 
 export function removeStyle(): void {
     removeNode(document.getElementById('dark-reader-style'));
-    document.documentElement.removeAttribute('data-darkreader-mode');
 }
