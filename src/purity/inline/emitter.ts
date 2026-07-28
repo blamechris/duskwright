@@ -50,6 +50,24 @@ export interface EmitterStats {
 export class InlineRuleEmitter {
     private readonly rules = new Map<string, Rule>();
     private readonly perElement = new WeakMap<object, string[]>();
+    /**
+     * The attribute text each element was last registered with.
+     *
+     * Without this, `update()` releases before it retains, so re-registering an element with
+     * an UNCHANGED attribute drops its sole-referenced rule to zero refs (deleting it) and
+     * immediately recreates it. The key count nets out, so it looks fine — but the rule
+     * churns and `dirty` is set, which re-emits and re-adopts the whole sheet on every
+     * repaint. That defeats the entire reason this table is reference-counted.
+     */
+    private readonly lastAttr = new WeakMap<object, {attr: string; generation: number}>();
+    /**
+     * Bumped by `clear()`. The shortcut above is a cache, and a cache needs an invalidation
+     * path: without this, clearing the table leaves `lastAttr` still claiming an element is
+     * registered, so the next identical update short-circuits against a rule that no longer
+     * exists and the element is never re-themed. WeakMap cannot be cleared, so the generation
+     * is compared instead.
+     */
+    private generation = 0;
     private unkeyableCount = 0;
     private oversizedCount = 0;
     private dirty = false;
@@ -63,6 +81,13 @@ export class InlineRuleEmitter {
      * Returns the keys now attributed to this element.
      */
     update(token: object, attr: string | null): string[] {
+        // A repeated identical update must be a TRUE no-op, not a release-and-retain that
+        // happens to net out. See lastAttr above.
+        const remembered = this.lastAttr.get(token);
+        if (attr !== null && remembered?.attr === attr && remembered.generation === this.generation) {
+            return this.perElement.get(token) ?? [];
+        }
+
         this.release(token);
         if (!attr) {
             return [];
@@ -85,6 +110,7 @@ export class InlineRuleEmitter {
             }
         }
         this.perElement.set(token, keys);
+        this.lastAttr.set(token, {attr, generation: this.generation});
         return keys;
     }
 
@@ -106,6 +132,7 @@ export class InlineRuleEmitter {
             }
         }
         this.perElement.delete(token);
+        this.lastAttr.delete(token);
     }
 
     private retain(decl: Declaration): string | null {
@@ -165,6 +192,7 @@ export class InlineRuleEmitter {
     }
 
     clear(): void {
+        this.generation++;
         this.rules.clear();
         this.unkeyableCount = 0;
         this.oversizedCount = 0;

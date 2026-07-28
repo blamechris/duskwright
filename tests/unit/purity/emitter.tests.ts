@@ -101,6 +101,56 @@ describe('InlineRuleEmitter', () => {
             expect(e.stats().keys).toBe(1);
         });
 
+        it('treats a repeated identical update as a true no-op', () => {
+            // The assertion above only checked key COUNT, which nets out to 1 even when the
+            // rule is deleted and recreated every call — so it passed while the emitter
+            // churned and re-emitted the entire sheet on every repaint. hasChanges is the
+            // assertion that actually catches it.
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.update(a, 'color:#333');
+            const css = e.buildCSS();
+            e.markClean();
+
+            for (let i = 0; i < 10; i++) {
+                e.update(a, 'color:#333');
+                expect(e.hasChanges).toBe(false);
+            }
+            expect(e.buildCSS()).toBe(css);
+            expect(e.stats().keys).toBe(1);
+        });
+
+        it('still returns the element keys on a no-op update', () => {
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            const first = e.update(a, 'color:#333');
+            expect(e.update(a, 'color:#333')).toEqual(first);
+        });
+
+        it('detects a real change after a run of no-ops', () => {
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.update(a, 'color:#333');
+            e.update(a, 'color:#333');
+            e.markClean();
+            e.update(a, 'color:#999');
+            expect(e.hasChanges).toBe(true);
+            expect(e.stats().keys).toBe(1);
+        });
+
+        it('re-registers correctly after release, despite the no-op shortcut', () => {
+            // release() must clear the remembered attribute, or a later identical update
+            // would short-circuit against a rule that no longer exists.
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.update(a, 'color:#333');
+            e.release(a);
+            expect(e.stats().keys).toBe(0);
+            e.update(a, 'color:#333');
+            expect(e.stats().keys).toBe(1);
+            expect(e.buildCSS()).toContain('color:#333');
+        });
+
         it('releasing an unknown element is a no-op', () => {
             const e = new InlineRuleEmitter(invert);
             expect(() => e.release(el())).not.toThrow();
@@ -155,5 +205,19 @@ describe('InlineRuleEmitter', () => {
         e.clear();
         expect(e.stats().keys).toBe(0);
         expect(e.buildCSS()).toBe('');
+    });
+
+    it('re-themes an unchanged element after clear()', () => {
+        // The no-op shortcut is a cache, and this is its invalidation path. Without it,
+        // clear() left the shortcut claiming the element was still registered, so the next
+        // identical update short-circuited against a deleted rule and the element was never
+        // themed again — empty CSS, silently.
+        const e = new InlineRuleEmitter(invert);
+        const a = el();
+        e.update(a, 'color:#333');
+        e.clear();
+        e.update(a, 'color:#333');
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('color:#333');
     });
 });
