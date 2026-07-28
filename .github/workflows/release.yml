@@ -1,0 +1,159 @@
+name: Release
+
+# Tag-driven. `git tag v0.2.0 && git push origin v0.2.0` builds the store-ready zips,
+# runs every gate against the tagged tree, and publishes a GitHub Release with both
+# archives attached.
+#
+# workflow_dispatch does the same thing WITHOUT publishing — it leaves the zips as
+# Actions artifacts so a release can be rehearsed before a tag exists.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# contents: write is required to create the Release. Every other job in this repo runs
+# read-only; this is the one that needs to write, and only on a tag.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      # The version lives in src/manifest.json — that is what bundle-manifest.js reads and
+      # what the browser actually installs. package.json is cosmetic here but drifting from
+      # it is a bug, so both must agree with the tag.
+      #
+      # Publishing v0.2.0 from a tree whose manifest still says 0.1.0 produces an artifact
+      # whose filename and release page disagree with the version the browser reports. That
+      # is silently wrong forever after — the store rejects a re-upload of the same version,
+      # so it cannot be quietly fixed. Fail before building, not after publishing.
+      - name: Tag matches the manifest version
+        id: version
+        run: |
+          set -euo pipefail
+          MANIFEST=$(node -p "require('./src/manifest.json').version")
+          PACKAGE=$(node -p "require('./package.json').version")
+
+          if [ "$MANIFEST" != "$PACKAGE" ]; then
+            echo "::error::src/manifest.json ($MANIFEST) and package.json ($PACKAGE) disagree"
+            exit 1
+          fi
+
+          if [ "${{ github.event_name }}" = 'push' ]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            if [ "${TAG#v}" != "$MANIFEST" ]; then
+              echo "::error::tag $TAG does not match manifest version $MANIFEST. \
+          Bump src/manifest.json and package.json to ${TAG#v}, or retag as v$MANIFEST."
+              exit 1
+            fi
+          else
+            TAG="v$MANIFEST"
+            echo "::notice::dry run — would release $TAG"
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$MANIFEST" >> "$GITHUB_OUTPUT"
+          # A hyphen means a prerelease identifier (0.2.0-beta.1) per semver.
+          case "$MANIFEST" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      # Note: NOT `--version=`. That flag routes through signedBuildTask, which throws for
+      # anything but Firefox MV2 (tasks/bundle-signature.js) — a target this fork does not
+      # build. Plain `npm run build` is correct; the stores do the signing.
+      - name: Build
+        run: npm run build
+
+      - run: npm run lint
+
+      - run: npm test
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      # THE BLOCKING GATE. A release that ships a purity violation ships the one thing this
+      # project exists to prevent. It runs against the build produced above, so it must stay
+      # after the build step. See CLAUDE.md and docs/adr/0001.
+      - name: Purity gate
+        run: npm run test:purity
+
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-failures
+          path: test-results/
+          retention-days: 7
+
+      # Guard against a green build that produced nothing. getPaths()/zip failures are not
+      # always fatal to the build task, and `gh release create` with a missing file argument
+      # would publish an empty release rather than fail.
+      - name: Archives exist
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in build/release/duskwright-chrome-mv3.zip build/release/duskwright-chrome.zip; do
+            if [ ! -s "$f" ]; then echo "::error::missing or empty archive: $f"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Publish
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          # --notes, not --notes-file: only --notes is documented to compose with
+          # --generate-notes (it is prepended to the generated changelog).
+          NOTES=$(cat <<'EOF'
+          ## Install
+
+          Download `duskwright-chrome-mv3.zip`, unzip it, then in `edge://extensions`
+          (or `chrome://extensions`) turn on **Developer mode** and click **Load unpacked**,
+          selecting the unzipped folder.
+
+          `duskwright-chrome.zip` is the legacy MV2 build. Use the MV3 archive unless you
+          have a specific reason not to — MV2 is no longer accepted by either store.
+
+          Duskwright makes no network calls and collects no telemetry.
+          EOF
+          )
+
+          FLAGS=()
+          if [ "$PRERELEASE" = 'true' ]; then FLAGS+=(--prerelease); fi
+
+          gh release create "$TAG" \
+            build/release/duskwright-chrome-mv3.zip \
+            build/release/duskwright-chrome.zip \
+            --title "$TAG" \
+            --notes "$NOTES" \
+            --generate-notes \
+            "${FLAGS[@]}"
+
+      # Dry run: no Release, but the exact artifacts a release would have published.
+      - name: Upload archives (dry run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: duskwright-${{ steps.version.outputs.version }}
+          path: build/release/*.zip
+          retention-days: 14
