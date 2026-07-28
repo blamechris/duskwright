@@ -165,6 +165,80 @@ describe('InlineRuleEmitter', () => {
         });
     });
 
+    describe('presentational attributes (tier 2)', () => {
+        it('emits an exact attribute match', () => {
+            const e = new InlineRuleEmitter(invert);
+            e.updateAttribute(el(), 'bgcolor', '#fff', 'background-color');
+            expect(e.buildCSS()).toBe('[bgcolor="#fff"] { background-color: #111 !important; }');
+        });
+
+        it('maps the attribute to a CSS property that is not its name', () => {
+            // bgcolor themes background-color; SVG fill can theme colour OR background-colour
+            // depending on geometry, so the mapping is the caller's to decide.
+            const e = new InlineRuleEmitter(invert);
+            e.updateAttribute(el(), 'fill', '#fff', 'color');
+            expect(e.buildCSS()).toContain('[fill="#fff"] { color:');
+        });
+
+        it('shares one rule across elements with the same attribute value', () => {
+            const e = new InlineRuleEmitter(invert);
+            for (let i = 0; i < 20; i++) {
+                e.updateAttribute(el(), 'bgcolor', '#fff', 'background-color');
+            }
+            expect(e.stats().keys).toBe(1);
+        });
+
+        it('treats an unchanged attribute as a true no-op', () => {
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.markClean();
+            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            expect(e.hasChanges).toBe(false);
+        });
+
+        it('releases the old rule when the attribute value changes', () => {
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#000', 'background-color');
+            expect(e.stats().keys).toBe(1);
+            expect(e.buildCSS()).toContain('[bgcolor="#000"]');
+        });
+
+        it('releases the rule when the attribute is removed', () => {
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', null, 'background-color');
+            expect(e.stats().keys).toBe(0);
+        });
+
+        it('keeps style and attribute keys independent on one element', () => {
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.update(a, 'color:#333');
+            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            expect(e.stats().keys).toBe(2);
+        });
+
+        it('release() drops the element\'s attribute rules too', () => {
+            // Without this a removed element leaks its tier-2 rules forever.
+            const e = new InlineRuleEmitter(invert);
+            const a = el();
+            e.update(a, 'color:#333');
+            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.release(a);
+            expect(e.stats().keys).toBe(0);
+        });
+
+        it('escapes a hostile attribute value', () => {
+            const e = new InlineRuleEmitter(invert);
+            e.updateAttribute(el(), 'bgcolor', '#fff" i],*{x:y}[a="', 'background-color');
+            expect(e.buildCSS()).toContain('\\"');
+        });
+    });
+
     describe('oversized fragments', () => {
         it('skips a fragment beyond the memory guard', () => {
             const e = new InlineRuleEmitter(invert);
