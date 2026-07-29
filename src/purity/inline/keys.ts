@@ -29,6 +29,8 @@
 //      media-heavy fixture. Splitting on `;` shreds one declaration into two useless
 //      fragments, so the splitter has to understand strings, parens, and comments.
 
+import type {Expander, Longhand} from './expand';
+
 /** One declaration, located within the attribute text it came from. */
 export interface Declaration {
     /** Lowercased property name, e.g. `background-color`. */
@@ -64,7 +66,38 @@ export interface Declaration {
      * Surfacing it here is what lets the caller actually do that instead of silently emitting
      * a colliding key.
      */
-    unkeyable: 'duplicate' | 'variable' | null;
+    unkeyable: UnkeyableReason | null;
+    /**
+     * The declaration expanded to longhands by the browser (ADR 0005 D1).
+     *
+     * The engine's colour maths only themes properties whose name contains `color`, and a page
+     * writes `background:#fff`, not `background-color`. Keying the authored text but theming
+     * these is what makes tier 1 actually work — without it, every corpus fixture's background
+     * went un-themed.
+     *
+     * Empty means the browser rejected the declaration and it must be skipped.
+     */
+    longhands: Longhand[];
+}
+
+/**
+ * Why a declaration cannot be keyed at tier 1.
+ *
+ * Split into reasons that force the WHOLE attribute out and reasons that skip one declaration
+ * (ADR 0005 D6). The distinction is whether the un-keyable declaration's selector would collide
+ * with a live declaration on some other element.
+ */
+export type UnkeyableReason =
+    | 'duplicate' // a longhand is declared twice — the earlier one is dead, and its
+                       // selector collides with a live declaration elsewhere. Whole attribute.
+    | 'variable' // value contains var(): the rendered result is not implied by the text
+    | 'variable-def' // the property IS a custom property; the engine returns a declaration set
+    | 'important' // inline !important beats any author rule we can write (ADR 0005)
+    | 'invalid'; // the browser rejected it; expansion was empty
+
+/** Does this reason require removing the whole attribute from tier 1? */
+export function unkeyableCollides(reason: UnkeyableReason): boolean {
+    return reason === 'duplicate';
 }
 
 const QUOTE = /['"]/;
@@ -122,7 +155,7 @@ function splitDeclarations(attr: string): Array<{start: number; end: number}> {
  * `style.cssText`, which normalizes, and not a value you have trimmed or rewritten. The
  * fragments are substrings of this exact text and are matched against it by the browser.
  */
-export function parseInlineDeclarations(attr: string): Declaration[] {
+export function parseInlineDeclarations(attr: string, expand: Expander): Declaration[] {
     const out: Declaration[] = [];
 
     for (const {start, end} of splitDeclarations(attr)) {
@@ -159,18 +192,35 @@ export function parseInlineDeclarations(attr: string): Declaration[] {
         const operator: Declaration['operator'] =
             atStart && atEnd ? '=' : atStart ? '^=' : atEnd ? '$=' : '*=';
 
-        out.push({property, value, important, fragment, operator, unkeyable: null});
+        const longhands = expand(property, value);
+        out.push({property, value, important, fragment, operator, unkeyable: null, longhands});
     }
 
-    // A second pass, because "declared more than once" is a property of the whole attribute
-    // and cannot be decided while parsing a single declaration.
-    const counts = new Map<string, number>();
+    // A second pass: "declares the same longhand twice" is a property of the whole attribute
+    // and cannot be decided while parsing one declaration.
+    //
+    // ADR 0005 D2: the comparison is over EXPANDED LONGHANDS, not authored property names.
+    // `border-top-color:#0f0;border:1px solid #333` has two distinct authored names but
+    // `border` expands to include `border-top-color`, so the first declaration is dead — and
+    // keying it would theme from a value the element never renders.
+    const longhandCounts = new Map<string, number>();
     for (const d of out) {
-        counts.set(d.property, (counts.get(d.property) ?? 0) + 1);
+        for (const {property} of d.longhands) {
+            longhandCounts.set(property, (longhandCounts.get(property) ?? 0) + 1);
+        }
     }
+
     for (const d of out) {
-        if (counts.get(d.property)! > 1) {
+        if (d.longhands.length === 0) {
+            d.unkeyable = 'invalid';
+        } else if (d.longhands.some(({property}) => longhandCounts.get(property)! > 1)) {
             d.unkeyable = 'duplicate';
+        } else if (d.important) {
+            // Nothing in tiers 1-4 can beat an inline !important; upstream won it by writing
+            // into the attribute. Counted and left alone rather than mis-themed. See ADR 0005.
+            d.unkeyable = 'important';
+        } else if (d.property.startsWith('--')) {
+            d.unkeyable = 'variable-def';
         } else if (containsVar(d.value)) {
             d.unkeyable = 'variable';
         }
@@ -208,14 +258,19 @@ function containsVar(value: string): boolean {
  * suspect, because the colliding selector is derived from one of its declarations. The caller
  * should route the element to tier 3 rather than cherry-pick the safe declarations out of it.
  */
-export function isTier1Safe(attr: string): boolean {
-    return parseInlineDeclarations(attr).every((d) => d.unkeyable === null);
+export function isTier1Safe(attr: string, expand: Expander): boolean {
+    return parseInlineDeclarations(attr, expand).every((d) => d.unkeyable === null);
 }
 
 /** The declarations of `attr` that are safe to key, i.e. none if any of them is not. */
-export function tier1Declarations(attr: string): Declaration[] {
-    const all = parseInlineDeclarations(attr);
-    return all.some((d) => d.unkeyable !== null) ? [] : all;
+export function tier1Declarations(attr: string, expand: Expander): Declaration[] {
+    const all = parseInlineDeclarations(attr, expand);
+    // A colliding reason takes the whole attribute out; a non-colliding one skips just that
+    // declaration (ADR 0005 D6).
+    if (all.some((d) => d.unkeyable !== null && unkeyableCollides(d.unkeyable))) {
+        return [];
+    }
+    return all.filter((d) => d.unkeyable === null);
 }
 
 /** Remove CSS comments, leaving string contents alone. */
