@@ -240,6 +240,21 @@ describe('InlineRuleEmitter', () => {
             expect(e.stats().keys).toBe(2);
         });
 
+        it('release() drops attribute rules for an element with NO style attribute', () => {
+            // The leak: release() used to return early when there was no tier-1 registration,
+            // so an element carrying only presentational attributes never had its tier-2 rules
+            // freed. Reachable by every <rect fill="..."> in svg-heavy.html.
+            //
+            // The test below passes even with the bug present, because it calls update() first
+            // and so never takes the short-circuit path. This one is the actual regression.
+            const e = new InlineRuleEmitter(invert, expand);
+            const a = el();
+            e.updateAttribute(a, 'fill', '#fff', 'color');
+            expect(e.stats().keys).toBe(1);
+            e.release(a);
+            expect(e.stats().keys).toBe(0);
+        });
+
         it('release() drops the element\'s attribute rules too', () => {
             // Without this a removed element leaks its tier-2 rules forever.
             const e = new InlineRuleEmitter(invert, expand);
