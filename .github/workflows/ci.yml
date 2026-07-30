@@ -40,6 +40,40 @@ jobs:
           grep -q "darkreader/darkreader" README.md || {
             echo "::error::README must state plainly that this is a fork and link upstream"; exit 1; }
 
+      - name: No literal control bytes in source
+        run: |
+          # A literal NUL byte reached main in src/purity/inline/. It is invisible in review,
+          # breaks grep and string-matching editors, and a reviewer who flagged it was told it
+          # was a false positive — because the check used to refute them was `grep -P '\x00'`,
+          # which cannot find NUL at all. grep is line-oriented and NUL-delimited, so it exits
+          # "no match" on a file that plainly contains one.
+          #
+          # Hence Python reading bytes: the check has to be able to see what it looks for.
+          python3 - <<'PY'
+          import pathlib, subprocess, sys
+          TEXT = {'.ts', '.tsx', '.js', '.mjs', '.cjs', '.json', '.md', '.yml', '.yaml',
+                  '.html', '.css', '.less', '.config', '.sh'}
+          files = subprocess.run(['git', 'ls-files'], capture_output=True, text=True).stdout.split()
+          bad = []
+          for f in files:
+              p = pathlib.Path(f)
+              if p.suffix not in TEXT:
+                  continue
+              try:
+                  data = p.read_bytes()
+              except OSError:
+                  continue
+              for n, line in enumerate(data.split(b'\n'), 1):
+                  if b'\x00' in line:
+                      bad.append(f'{f}:{n}')
+          if bad:
+              print('::error::literal NUL byte in source (write it as \\u0000 instead):')
+              for b in bad:
+                  print(f'  {b}')
+              sys.exit(1)
+          print(f'no literal control bytes across {len(files)} tracked files')
+          PY
+
       - name: No AI or agent attribution
         run: |
           # Match attribution as it actually appears — a trailer or footer at the start of a
