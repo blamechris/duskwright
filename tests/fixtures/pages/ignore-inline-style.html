@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ignoreInlineStyle exclusion</title>
+<style>
+body{background:#fff;color:#111;font:15px system-ui;margin:0;padding:24px}
+section{border:1px solid #ccc;padding:12px;margin:12px 0}
+h2{font:600 13px/1 ui-monospace;margin:0 0 8px;color:#555}
+.probe{padding:6px;margin:4px 0}
+</style></head>
+<body>
+<h1><code>ignoreInlineStyle</code> exclusion</h1>
+
+<p><strong>229 catalog sites</strong> use <code>ignoreInlineStyle</code> to opt regions out of
+inline theming. Upstream implements it as a per-element early return. Under declaration keying
+there is no early return available — one rule serves every element carrying that declaration,
+so an ignored element and a non-ignored element with the <em>same</em> <code>style</code> text
+share a rule. The exclusion has to move into the selector.</p>
+
+<p>Every pair below carries the <strong>byte-identical</strong> style attribute. That is the
+whole point: if the exclusion is dropped, the two elements in a pair become indistinguishable
+to the emitter and both get themed.</p>
+
+<section>
+  <h2>.entry-content * — descendant combinator</h2>
+  <div class="entry-content">
+    <div class="probe" id="ignored-descendant" style="color:#333;background:#fff">
+      IGNORED — must keep its own colours
+    </div>
+  </div>
+  <div class="probe" id="themed-descendant" style="color:#333;background:#fff">
+    THEMED — identical style attribute, must be themed
+  </div>
+</section>
+
+<section>
+  <h2>#panel &gt; .row — child combinator</h2>
+  <div id="panel">
+    <div class="row probe" id="ignored-child" style="color:#444">IGNORED</div>
+  </div>
+  <div class="row probe" id="themed-child" style="color:#444">THEMED — identical attribute</div>
+</section>
+
+<section>
+  <h2>a[href^="/store/apps/"] svg * — attribute selector in the chain</h2>
+  <a href="/store/apps/x"><svg width="60" height="20">
+    <rect id="ignored-attrsel" width="60" height="20" style="fill:#555"></rect>
+  </svg></a>
+  <svg width="60" height="20">
+    <rect id="themed-attrsel" width="60" height="20" style="fill:#555"></rect>
+  </svg>
+</section>
+
+<section>
+  <h2>Escaped identifier — the catalog really contains these</h2>
+  <!-- e.g. #radix-\:r2\: from the real fixes config -->
+  <div id="radix-:r2:">
+    <div class="probe" id="ignored-escaped" style="color:#666">IGNORED</div>
+  </div>
+  <div class="probe" id="themed-escaped" style="color:#666">THEMED — identical attribute</div>
+</section>
+
+<script>
+// The selectors a fix would carry for this page, exposed so the harness asserts against the
+// same list the engine would be given rather than a copy that can drift.
+window.__ignoreInlineStyle = [
+  '.entry-content *',
+  '#panel > .row',
+  'a[href^="/store/apps/"] svg *',
+  '#radix-\\:r2\\: *',
+];
+
+// Pairs that MUST end up different. Reading these from the page keeps the assertion and the
+// markup in one place.
+window.__ignorePairs = [
+  ['ignored-descendant', 'themed-descendant'],
+  ['ignored-child', 'themed-child'],
+  ['ignored-attrsel', 'themed-attrsel'],
+  ['ignored-escaped', 'themed-escaped'],
+];
+</script>
+</body>
+</html>

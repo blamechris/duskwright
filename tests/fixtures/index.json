@@ -75,6 +75,9 @@
      "note": "Overlays are where painted-area sampling most often miscounts."},
     {"file": "late-injected-styles.html", "cause": 6, "epics": ["E2", "E7"],
      "note": "Stylesheet at 800ms, inline-styled element at 1600ms."},
+    {"file": "ignore-inline-style.html", "epics": ["E2", "E7"],
+     "note": "229 catalog sites use ignoreInlineStyle. Under declaration keying it cannot be an early return: each pair here carries a byte-identical style attribute, one inside an ignored region and one outside, so a dropped exclusion makes them indistinguishable to the emitter and themes both."},
+
     {"file": "css-variables.html", "epics": ["E2"],
      "note": "Resolution through custom properties, including a locally overridden scope."}
   ],
