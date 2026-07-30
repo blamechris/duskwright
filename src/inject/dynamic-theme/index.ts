@@ -25,6 +25,7 @@ import {filterSelectors, cleanFilterSelectors, addFilterSelector} from './select
 import type {StyleElement, StyleManager} from './style-manager';
 import {manageStyle, getManageableStyles, cleanLoadingLinks, setIgnoredCSSURLs} from './style-manager';
 import {injectProxy} from './stylesheet-proxy';
+import {rewriteCatalogMarkers} from '../../purity/catalog-markers';
 import {resolveSchemeSelectors} from '../../purity/scheme-selectors';
 import {variablesStore} from './variables';
 import {watchForStyleChanges, stopWatchingForStyleChanges} from './watch';
@@ -308,7 +309,14 @@ function createShadowStaticStyleOverrides(root: ShadowRoot) {
 }
 
 function replaceCSSTemplates($cssText: string) {
-    return resolveSchemeSelectors($cssText, theme!.mode ? 'dark' : 'dimmed').replace(/\${(.+?)}/g, (_, $color) => {
+    // Two load-time rewrites of the synced catalog, both replacing things the engine used to
+    // provide by writing to page-owned elements: the scheme attribute on <html> (ADR 0001
+    // item 7) and the inline marker attributes (ADR 0005 D5). Doing it here keeps the catalog
+    // itself unedited, so E9's scheduled sync stays clean.
+    const resolved = rewriteCatalogMarkers(
+        resolveSchemeSelectors($cssText, theme!.mode ? 'dark' : 'dimmed'),
+    );
+    return resolved.replace(/\${(.+?)}/g, (_, $color) => {
         const color = parseColorWithCache($color);
         if (color) {
             const lightness = getSRGBLightness(color.r, color.g, color.b);
