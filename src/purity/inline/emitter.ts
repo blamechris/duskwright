@@ -53,6 +53,24 @@ interface Rule {
     refs: number;
 }
 
+/**
+ * How one presentational attribute becomes a rule (ADR 0005 D3).
+ *
+ * The two properties are separate because the engine treats them separately: it picks a colour
+ * modifier by one name and writes the result under another. Collapsing them emits
+ * `background-color` onto an SVG `<rect>`, which paints nothing.
+ */
+export interface AttributeSpec {
+    /** The property whose colour maths applies. Often NOT the property emitted. */
+    themeAs: string;
+    /** The property actually written into the rule body. */
+    emitAs: string;
+    /** Appended to the attribute selector, e.g. `:not(line):not(text)`. */
+    qualifier?: string;
+    /** Restrict to these element types, e.g. `['line', 'text']`. Takes precedence over `qualifier`. */
+    tags?: string[];
+}
+
 export interface EmitterStats {
     keys: number;
     /** Declarations skipped because the whole attribute was un-keyable (var(), duplicates). */
@@ -154,17 +172,33 @@ export class InlineRuleEmitter {
      * and style-attribute declarations. Replacing the write for one and not the other would
      * leave half the P0 violation in place.
      *
-     * `cssProperty` is the CSS property the attribute maps to, which is not always its name —
-     * `bgcolor` themes `background-color`, and SVG `fill` themes `color` or `background-color`
-     * depending on geometry.
+     * ADR 0005 D3: `themeAs` and `emitAs` are separate, because the engine deliberately uses
+     * different properties for the two roles. `stroke` is THEMED as `border-color` on
+     * SVGLineElement and SVGTextElement and as `color` elsewhere — but must always be EMITTED
+     * as `stroke`. Emitting `background-color` on an SVG `<rect>` paints nothing at all.
+     *
+     * `tags` narrows a rule to specific element types, which is how the element-type
+     * discrimination the engine performs in JavaScript becomes expressible as a selector.
+     * `qualifier` covers the complementary case:
+     *
+     *     line[stroke="#333"], text[stroke="#333"]  { stroke: <themed as border-color> }
+     *     [stroke="#333"]:not(line):not(text)       { stroke: <themed as color> }
+     *
+     * SVG `fill` is deliberately NOT routed here — ADR 0005 D4. Its modifier depends on the
+     * measured geometry of the element and its root, so `<rect fill="#fff">` and
+     * `<text fill="#fff">` would need one selector to give two different answers.
      */
     updateAttribute(
         token: object,
         attrName: string,
         attrValue: string | null,
-        cssProperty: string,
+        spec: AttributeSpec,
     ): string | null {
-        const slot = `${attrName}${KEY_SEP}${cssProperty}`;
+        const {themeAs, emitAs, qualifier = '', tags} = spec;
+        // The shape is part of the identity: one attribute value themed two different ways for
+        // two element types must not collapse into a single rule.
+        const shape = `${emitAs}|${themeAs}|${qualifier}|${(tags ?? []).join(',')}`;
+        const slot = `${attrName}${KEY_SEP}${shape}`;
         const previous = this.attrKeys.get(token);
         const existingKey = previous?.get(slot);
 
@@ -176,7 +210,7 @@ export class InlineRuleEmitter {
             return null;
         }
 
-        const key = `@${attrName}=${attrValue}${KEY_SEP}${cssProperty}`;
+        const key = `@${attrName}=${attrValue}${KEY_SEP}${shape}`;
         if (existingKey === key) {
             return key; // unchanged — a true no-op, same as update()
         }
@@ -188,14 +222,19 @@ export class InlineRuleEmitter {
         if (rule) {
             rule.refs++;
         } else {
-            const themed = this.themer(cssProperty, attrValue);
+            const themed = this.themer(themeAs, attrValue);
             if (themed == null) {
                 previous?.delete(slot);
                 return null;
             }
+            // Themed as one property, emitted as another (ADR 0005 D3).
+            const attrSel = `[${attrName}="${escapeCSSString(attrValue)}"]`;
+            const selector = tags && tags.length > 0
+                ? tags.map((tag) => `${tag}${attrSel}`).join(', ')
+                : `${attrSel}${qualifier}`;
             this.rules.set(key, {
-                selector: `[${attrName}="${escapeCSSString(attrValue)}"]`,
-                body: `${cssProperty}: ${themed} !important`,
+                selector,
+                body: `${emitAs}: ${themed} !important`,
                 refs: 1,
             });
             this.dirty = true;

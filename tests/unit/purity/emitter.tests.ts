@@ -24,6 +24,9 @@ const expand = createTableExpander({
     'background:#fff': [{property: 'background-color', value: 'rgb(255, 255, 255)'}],
 });
 
+/** The commonest tier-2 spec: `bgcolor` both themes and emits `background-color`. */
+const BG = {themeAs: 'background-color', emitAs: 'background-color'};
+
 const el = () => ({} as object);
 
 describe('InlineRuleEmitter', () => {
@@ -186,22 +189,52 @@ describe('InlineRuleEmitter', () => {
     describe('presentational attributes (tier 2)', () => {
         it('emits an exact attribute match', () => {
             const e = new InlineRuleEmitter(invert, expand);
-            e.updateAttribute(el(), 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(el(), 'bgcolor', '#fff', BG);
             expect(e.buildCSS()).toBe('[bgcolor="#fff"] { background-color: #111 !important; }');
         });
 
-        it('maps the attribute to a CSS property that is not its name', () => {
-            // bgcolor themes background-color; SVG fill can theme colour OR background-colour
-            // depending on geometry, so the mapping is the caller's to decide.
+        it('themes by one property and emits another (ADR 0005 D3)', () => {
+            // The engine themes SVG `stroke` as a colour but must WRITE `stroke`. Emitting the
+            // themed name instead would put `color:` in the rule, which paints no stroke at all.
             const e = new InlineRuleEmitter(invert, expand);
-            e.updateAttribute(el(), 'fill', '#fff', 'color');
-            expect(e.buildCSS()).toContain('[fill="#fff"] { color:');
+            e.updateAttribute(el(), 'stroke', '#fff', {themeAs: 'color', emitAs: 'stroke'});
+            expect(e.buildCSS()).toBe('[stroke="#fff"] { stroke: #111 !important; }');
+        });
+
+        it('restricts a rule to specific element types', () => {
+            // How the engine's JavaScript element-type check becomes a selector.
+            const e = new InlineRuleEmitter(invert, expand);
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'border-color', emitAs: 'stroke', tags: ['line', 'text'],
+            });
+            expect(e.buildCSS()).toContain('line[stroke="#fff"], text[stroke="#fff"]');
+        });
+
+        it('supports the complementary :not() case', () => {
+            const e = new InlineRuleEmitter(invert, expand);
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'color', emitAs: 'stroke', qualifier: ':not(line):not(text)',
+            });
+            expect(e.buildCSS()).toContain('[stroke="#fff"]:not(line):not(text)');
+        });
+
+        it('keeps the two halves of the line/text split as separate rules', () => {
+            // If the shape were not part of the key these would collapse into one rule, and
+            // one of the two element groups would be themed with the wrong modifier.
+            const e = new InlineRuleEmitter(invert, expand);
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'border-color', emitAs: 'stroke', tags: ['line', 'text'],
+            });
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'color', emitAs: 'stroke', qualifier: ':not(line):not(text)',
+            });
+            expect(e.stats().keys).toBe(2);
         });
 
         it('shares one rule across elements with the same attribute value', () => {
             const e = new InlineRuleEmitter(invert, expand);
             for (let i = 0; i < 20; i++) {
-                e.updateAttribute(el(), 'bgcolor', '#fff', 'background-color');
+                e.updateAttribute(el(), 'bgcolor', '#fff', BG);
             }
             expect(e.stats().keys).toBe(1);
         });
@@ -209,17 +242,17 @@ describe('InlineRuleEmitter', () => {
         it('treats an unchanged attribute as a true no-op', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             e.markClean();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             expect(e.hasChanges).toBe(false);
         });
 
         it('releases the old rule when the attribute value changes', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
-            e.updateAttribute(a, 'bgcolor', '#000', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
+            e.updateAttribute(a, 'bgcolor', '#000', BG);
             expect(e.stats().keys).toBe(1);
             expect(e.buildCSS()).toContain('[bgcolor="#000"]');
         });
@@ -227,8 +260,8 @@ describe('InlineRuleEmitter', () => {
         it('releases the rule when the attribute is removed', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
-            e.updateAttribute(a, 'bgcolor', null, 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
+            e.updateAttribute(a, 'bgcolor', null, BG);
             expect(e.stats().keys).toBe(0);
         });
 
@@ -236,7 +269,7 @@ describe('InlineRuleEmitter', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
             e.update(a, 'color:#333');
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             expect(e.stats().keys).toBe(2);
         });
 
@@ -249,7 +282,7 @@ describe('InlineRuleEmitter', () => {
             // and so never takes the short-circuit path. This one is the actual regression.
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'fill', '#fff', 'color');
+            e.updateAttribute(a, 'stroke', '#fff', {themeAs: 'color', emitAs: 'stroke'});
             expect(e.stats().keys).toBe(1);
             e.release(a);
             expect(e.stats().keys).toBe(0);
@@ -260,14 +293,14 @@ describe('InlineRuleEmitter', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
             e.update(a, 'color:#333');
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             e.release(a);
             expect(e.stats().keys).toBe(0);
         });
 
         it('escapes a hostile attribute value', () => {
             const e = new InlineRuleEmitter(invert, expand);
-            e.updateAttribute(el(), 'bgcolor', '#fff" i],*{x:y}[a="', 'background-color');
+            e.updateAttribute(el(), 'bgcolor', '#fff" i],*{x:y}[a="', BG);
             expect(e.buildCSS()).toContain('\\"');
         });
     });
