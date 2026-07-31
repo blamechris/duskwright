@@ -36,6 +36,21 @@ describe('rewriteCatalogMarkers', () => {
             expect(out).not.toContain('data-darkreader-inline');
         });
 
+        it('stays a single compound when the marker has a prefix', () => {
+            // The bug this guards: a bare comma-separated list splits the rule, and the second
+            // alternative loses the `g` prefix — so the rule stops being scoped and applies far
+            // more widely than the site fix intended.
+            const out = rewriteCatalogMarkers('g[data-darkreader-inline-fill] { fill: black; }');
+            expect(out).toBe('g:is([fill], [style*="fill:"]) { fill: black; }');
+            // Specifically: no top-level comma introduced into the selector.
+            expect(out.slice(0, out.indexOf('{'))).not.toMatch(/,(?![^()]*\))/);
+        });
+
+        it('stays scoped inside a descendant selector too', () => {
+            const out = rewriteCatalogMarkers('.foo [data-darkreader-inline-color] { x: y; }');
+            expect(out).toBe('.foo :is([color], [style*="color:"]) { x: y; }');
+        });
+
         it('covers both the attribute and the style-declaration form', () => {
             // Upstream's marker was written in either case, so both must be matched or the
             // fix silently stops applying to half the elements it used to.

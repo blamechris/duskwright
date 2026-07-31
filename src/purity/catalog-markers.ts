@@ -65,7 +65,18 @@ function inlinePresenceSelector(suffix: string): string | null {
     } else if (suffix === 'bgcolor') {
         parts.unshift('[bgcolor]');
     }
-    return parts.join(', ');
+
+    // Wrapped in :is() so the result stays ONE compound selector.
+    //
+    // A bare comma-separated list breaks any rule where the marker sits inside a compound:
+    // `g[data-darkreader-inline-fill]` would become `g[fill], [style*="fill:"]`, and the second
+    // alternative silently loses the `g` prefix — the rule stops being scoped and applies far
+    // more widely than the site fix intended. Same failure shape as the :not() ordering issue
+    // below, in a different position.
+    //
+    // :is() also keeps specificity predictable: it takes that of its most specific argument,
+    // and both arguments here are single attribute selectors.
+    return parts.length === 1 ? parts[0] : `:is(${parts.join(', ')})`;
 }
 
 /**

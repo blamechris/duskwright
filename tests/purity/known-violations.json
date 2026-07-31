@@ -50,6 +50,14 @@
             "attribute \"data-darkreader-inline-bgimage\" written on page-owned <td>",
             "attribute \"style\" written on page-owned <td>"
         ],
+        "ignore-inline-style.html": [
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-color\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-fill\" written on page-owned <rect>",
+            "attribute \"style\" written on page-owned <div>",
+            "attribute \"style\" written on page-owned <rect>"
+        ],
         "late-injected-styles.html": [
             "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",
             "attribute \"data-darkreader-inline-bgimage\" written on page-owned <div>",
