@@ -24,6 +24,28 @@ const expand = createTableExpander({
     'background:#fff': [{property: 'background-color', value: 'rgb(255, 255, 255)'}],
 });
 
+/**
+ * The declaration text an emitted rule carries, written out by hand.
+ *
+ * Every themed property is routed through its marker custom property so a per-site fix can
+ * override us on exactly the elements we themed (ADR 0006 D4), and each rule resets that
+ * property to `initial` because custom properties inherit and upstream's gate did not.
+ *
+ * Spelled out here rather than imported from the module under test — a helper that called the
+ * production function would assert only that the code equals itself. The suffix map is the
+ * short one these tests actually use; a wrong entry fails loudly rather than silently.
+ */
+const SUFFIX: Record<string, string> = {
+    'color': 'color',
+    'background-color': 'bgcolor',
+    'stroke': 'stroke',
+    'fill': 'fill',
+};
+function decl(property: string, themed: string): string {
+    const marker = `--darkreader-inline-${SUFFIX[property]}`;
+    return `${marker}: initial; ${property}: var(${marker}, ${themed}) !important`;
+}
+
 /** The commonest tier-2 spec: `bgcolor` both themes and emits `background-color`. */
 const BG = {themeAs: 'background-color', emitAs: 'background-color'};
 
@@ -34,7 +56,7 @@ describe('InlineRuleEmitter', () => {
         const e = new InlineRuleEmitter(invert, expand);
         e.update(el(), 'color:#333');
         expect(e.stats().keys).toBe(1);
-        expect(e.buildCSS()).toBe('[style="color:#333"] { color: #eee !important; }');
+        expect(e.buildCSS()).toBe(`[style="color:#333"] { ${decl('color', '#eee')}; }`);
     });
 
     it('shares one rule between elements carrying the same declaration', () => {
@@ -190,7 +212,7 @@ describe('InlineRuleEmitter', () => {
         it('emits an exact attribute match', () => {
             const e = new InlineRuleEmitter(invert, expand);
             e.updateAttribute(el(), 'bgcolor', '#fff', BG);
-            expect(e.buildCSS()).toBe('[bgcolor="#fff"] { background-color: #111 !important; }');
+            expect(e.buildCSS()).toBe(`[bgcolor="#fff"] { ${decl('background-color', '#111')}; }`);
         });
 
         it('themes by one property and emits another (ADR 0005 D3)', () => {
@@ -198,7 +220,7 @@ describe('InlineRuleEmitter', () => {
             // themed name instead would put `color:` in the rule, which paints no stroke at all.
             const e = new InlineRuleEmitter(invert, expand);
             e.updateAttribute(el(), 'stroke', '#fff', {themeAs: 'color', emitAs: 'stroke'});
-            expect(e.buildCSS()).toBe('[stroke="#fff"] { stroke: #111 !important; }');
+            expect(e.buildCSS()).toBe(`[stroke="#fff"] { ${decl('stroke', '#111')}; }`);
         });
 
         it('restricts a rule to specific element types', () => {
@@ -382,7 +404,7 @@ describe('shorthand expansion (ADR 0005 D1)', () => {
         const e = new InlineRuleEmitter(invert, expand);
         e.update(el(), 'background:#fff');
         // Authored on the left of the brace, expanded on the right. That asymmetry IS the fix.
-        expect(e.buildCSS()).toBe('[style="background:#fff"] { background-color: #111 !important; }');
+        expect(e.buildCSS()).toBe(`[style="background:#fff"] { ${decl('background-color', '#111')}; }`);
     });
 
     it('emits one rule with several declarations when a shorthand expands to several', () => {
@@ -515,5 +537,133 @@ describe('the tier-1 half of the same stale-key bug', () => {
         e.clear();
         e.update(t, 'color:#333');
         expect(e.stats().keys).toBe(1);
+    });
+});
+
+describe('the catalog gate (ADR 0006 D4)', () => {
+    // Upstream's `[data-darkreader-inline-fill] { fill: var(--darkreader-inline-fill) }` was the
+    // ONLY consumer of the catalog's `--darkreader-inline-fill` declarations, and that is what
+    // made a per-site fix apply to exactly the elements the engine had themed. Our rules take
+    // over that role. Three earlier attempts approximated the gate with a presence selector and
+    // all three were wrong, in both directions.
+
+    it('reads the marker property with the themed value as fallback', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        e.update(el(), 'color:#333');
+        expect(e.buildCSS()).toContain('color: var(--darkreader-inline-color, #eee) !important');
+    });
+
+    it('resets the marker property to initial on every rule', () => {
+        // Custom properties inherit and upstream's gate did not: it declared the property inline
+        // on each themed element, so a themed descendant carried its own value. We declare
+        // nothing, so without this a themed <path> inside a catalog-targeted <svg> inherits the
+        // site fix's colour instead of its own. Measured in Chromium — see the purity spec.
+        const e = new InlineRuleEmitter(invert, expand);
+        e.update(el(), 'color:#333');
+        expect(e.buildCSS()).toContain('--darkreader-inline-color: initial;');
+    });
+
+    it('applies to tier 2 as well, since the catalog gates both the same way', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        e.updateAttribute(el(), 'bgcolor', '#fff', BG);
+        const css = e.buildCSS();
+        expect(css).toContain('--darkreader-inline-bgcolor: initial;');
+        expect(css).toContain('background-color: var(--darkreader-inline-bgcolor, #111) !important');
+    });
+
+    it('leaves a property with no marker alone', () => {
+        // Only the thirteen properties upstream had markers for are routed. Wrapping the rest
+        // would add a var() lookup and a reset for a property no catalog rule can target.
+        const e = new InlineRuleEmitter(invert, createTableExpander({
+            'caret-color': [{property: 'caret-color', value: '#333'}],
+        }));
+        e.update(el(), 'caret-color:#333');
+        const css = e.buildCSS();
+        expect(css).toContain('caret-color: #eee !important');
+        expect(css).not.toContain('var(');
+    });
+});
+
+describe('cascade order between the two tiers', () => {
+    // The page's own cascade is unambiguous: `bgcolor` is a presentational hint, ranking below
+    // every author rule, and `style` is inline, outranking them all. Our two families are both
+    // (0,1,0) and both `!important`, so DOCUMENT ORDER is the only thing deciding — and it has
+    // to reproduce that ranking.
+    it('emits tier 2 before tier 1, whichever was registered first', () => {
+        // Registered attribute-first here and style-first below, because the bug this guards is
+        // exactly "whichever rule happened to be created first on the whole page wins".
+        const a = new InlineRuleEmitter(invert, expand);
+        const e1 = el();
+        a.updateAttribute(e1, 'bgcolor', '#fff', BG);
+        a.update(e1, 'background:#fff');
+
+        const b = new InlineRuleEmitter(invert, expand);
+        const e2 = el();
+        b.update(e2, 'background:#fff');
+        b.updateAttribute(e2, 'bgcolor', '#fff', BG);
+
+        for (const css of [a.buildCSS(), b.buildCSS()]) {
+            const lines = css.split('\n');
+            expect(lines).toHaveLength(2);
+            expect(lines[0]).toContain('[bgcolor=');
+            expect(lines[1]).toContain('[style');
+        }
+    });
+});
+
+describe('the ignore qualifier', () => {
+    it('is appended to every rule, in both tiers', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.update(t, 'color:#333');
+        e.updateAttribute(t, 'bgcolor', '#fff', BG);
+        e.setIgnoreQualifier(':not(.entry-content *)');
+        for (const line of e.buildCSS().split('\n')) {
+            expect(line).toContain(':not(.entry-content *) {');
+        }
+    });
+
+    it('lands on rules created BEFORE it was set, not just after', () => {
+        // Applied at build time rather than baked into each rule. Baking it in leaves every rule
+        // created before the site's fixes arrived silently un-excluded.
+        const e = new InlineRuleEmitter(invert, expand);
+        e.update(el(), 'color:#333');
+        e.setIgnoreQualifier(':not(.x)');
+        expect(e.buildCSS()).toContain('[style="color:#333"]:not(.x)');
+    });
+
+    it('qualifies a tag-restricted rule as ONE compound, not just its last alternative', () => {
+        // `line[stroke="#333"], text[stroke="#333"]` is a selector LIST. Appending `:not(...)`
+        // to that lands on `text` only, and the `line` half stops being excluded — the same
+        // shape of bug as the `:not()` ordering and `:is()` compound issues before it.
+        const e = new InlineRuleEmitter(invert, expand);
+        e.updateAttribute(el(), 'stroke', '#333', {
+            themeAs: 'border-color', emitAs: 'stroke', tags: ['line', 'text'],
+        });
+        e.setIgnoreQualifier(':not(.x)');
+        const selector = e.buildCSS().split(' {')[0];
+        expect(selector).toBe(':is(line[stroke="#333"], text[stroke="#333"]):not(.x)');
+    });
+
+    it('marks the sheet dirty so a change actually reaches the page', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        e.update(el(), 'color:#333');
+        e.markClean();
+        e.setIgnoreQualifier(':not(.x)');
+        expect(e.hasChanges).toBe(true);
+        e.markClean();
+        e.setIgnoreQualifier(':not(.x)'); // unchanged — must not churn the sheet
+        expect(e.hasChanges).toBe(false);
+    });
+});
+
+describe('themeValue (a legacy attribute themed from a repaired value)', () => {
+    it('themes the repaired value but selects on the raw one', () => {
+        // `<td bgcolor="fff">` renders white. Theming `fff` parses as nothing; selecting on
+        // `#fff` matches nothing. Both are needed and they are not the same string.
+        const e = new InlineRuleEmitter(invert, expand);
+        e.updateAttribute(el(), 'bgcolor', 'fff', {...BG, themeValue: '#fff'});
+        // invert maps #fff -> #111; without themeValue the stub sees `fff` and answers #eee.
+        expect(e.buildCSS()).toBe(`[bgcolor="fff"] { ${decl('background-color', '#111')}; }`);
     });
 });

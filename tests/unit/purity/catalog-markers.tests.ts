@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 
-import {rewriteCatalogMarkers, findMarkerSuffixes, MARKER_PROPERTIES} from '../../../src/purity/catalog-markers';
+import {rewriteCatalogMarkers, findMarkerSuffixes, MARKER_PROPERTIES, markerCustomProperty} from '../../../src/purity/catalog-markers';
 
 // The catalog is synced from upstream on a schedule (E9), so this transform is what keeps ~26
 // site fixes working after the marker attributes were removed. A regression here is silent:
@@ -26,21 +26,30 @@ function topLevelCommas(selector: string): number {
 }
 
 describe('rewriteCatalogMarkers', () => {
-    describe('A — custom-property sets', () => {
-        it('writes the real property instead of the handoff custom property', () => {
-            expect(rewriteCatalogMarkers('.a { --darkreader-inline-fill: #110133 !important; }'))
-                .toBe('.a { fill: #110133 !important; }');
+    describe('A — custom-property sets are LEFT ALONE', () => {
+        // ADR 0005 D5 said to rewrite these into the real property and called it "exactly
+        // equivalent". It is not: the custom property was inert unless the element carried the
+        // marker, because the generated marker rule was its only consumer — and that consumer
+        // WAS the gate on "did the engine theme this element?". Rewriting deletes the gate.
+        //
+        // Our emitted rules consume the property instead (ADR 0006 D4), so there is nothing to
+        // rewrite. These tests exist to stop the old behaviour coming back.
+        it('leaves a custom-property set exactly as written', () => {
+            const css = '.a { --darkreader-inline-fill: #110133 !important; }';
+            expect(rewriteCatalogMarkers(css)).toBe(css);
         });
 
-        it('maps a suffix whose name is not the property', () => {
-            // bgcolor means background-color. Getting this wrong mis-themes silently.
-            expect(rewriteCatalogMarkers('.a { --darkreader-inline-bgcolor: #fff; }'))
-                .toBe('.a { background-color: #fff; }');
+        it('leaves the multi-word border suffixes alone too', () => {
+            const css = '.a { --darkreader-inline-border-top: red; }';
+            expect(rewriteCatalogMarkers(css)).toBe(css);
         });
 
-        it('handles the multi-word border suffixes', () => {
-            expect(rewriteCatalogMarkers('.a { --darkreader-inline-border-top: red; }'))
-                .toBe('.a { border-top-color: red; }');
+        it('does not turn the set into the real property', () => {
+            // The specific regression: `--darkreader-inline-bgcolor: #fff` becoming
+            // `background-color: #fff`, which applies to every element the selector matches.
+            const out = rewriteCatalogMarkers('pre { --darkreader-inline-bgcolor: royalblue !important; }');
+            expect(out).not.toContain('background-color:');
+            expect(out).toContain('--darkreader-inline-bgcolor: royalblue !important');
         });
     });
 
@@ -62,54 +71,76 @@ describe('rewriteCatalogMarkers', () => {
     const BGIMAGE_BROAD = '[style*="background-image:"]';
     const FILL_BROAD = '[fill], [style*="fill:"]';
 
-    describe('B — marker used as a selector', () => {
-        it('replaces it with a real presence test', () => {
-            const out = rewriteCatalogMarkers('[data-darkreader-inline-fill] { fill: black !important; }');
-            expect(out).toBe(`${FILL_PRESENCE} { fill: black !important; }`);
-            expect(out).not.toContain('data-darkreader-inline');
+    describe('B — marker used as a selector, collapsed into a property set', () => {
+        // The rule is rewritten to SET the marker custom property, which the rules we emit
+        // already consume (ADR 0006 D4). That is exact where a presence selector could only
+        // approximate: the property is read on exactly the elements we themed.
+        //
+        // It is automatically right for properties we no longer theme at all, too — nothing
+        // reads the property there, so the fix is inert, which is what upstream's unwritten
+        // marker would have produced. The presence-test version over-applied instead: measured,
+        // `[data-darkreader-inline-bgimage] { background-image: none }` wiped the background of
+        // every element with an inline `background-image:`, where upstream marked only
+        // <html>/<body>.
+        it('sets the custom property instead of the real one', () => {
+            expect(rewriteCatalogMarkers('[data-darkreader-inline-fill] { fill: black !important; }'))
+                .toBe('* { --darkreader-inline-fill: black !important; }');
         });
 
-        it('anchors the style form so it cannot match the *-color family', () => {
-            // The regression this guards: a bare `[style*="color:"]`, which is the same
-            // cross-match keys.ts exists to prevent (ADR 0004 note 2).
-            const out = rewriteCatalogMarkers('[data-darkreader-inline-color] { x: y; }');
-            expect(out).toContain('[style^="color:"]');
-            expect(out).not.toContain('[style*="color:"]');
+        it('keeps the rest of the compound and the rest of the selector', () => {
+            expect(rewriteCatalogMarkers('g[data-darkreader-inline-fill] { fill: black; }'))
+                .toBe('g { --darkreader-inline-fill: black; }');
+            expect(rewriteCatalogMarkers('a title + g[data-darkreader-inline-fill] { fill: red; }'))
+                .toBe('a title + g { --darkreader-inline-fill: red; }');
+            expect(rewriteCatalogMarkers('.foo [data-darkreader-inline-color] { color: red; }'))
+                .toBe('.foo * { --darkreader-inline-color: red; }');
         });
 
-        it('excludes the attribute values upstream never themed', () => {
-            // `none` and `currentColor` are skipped by the colour maths outright, and `url(#g)`
-            // fails to parse as a colour — so none of those elements ever carried the marker.
-            const out = rewriteCatalogMarkers('[data-darkreader-inline-fill] { x: y; }');
-            // In a single `:where()`, not chained `:not()`s — chained ones sum to (0,4,0),
-            // measured in Chromium. `:where()` contributes zero, so the rule keeps the (0,1,0)
-            // of the marker attribute it replaces.
-            expect(out).toContain(':not(:where([fill="none" i], [fill="currentColor" i], [fill^="url(" i]))');
+        it('maps a suffix whose name is not the property', () => {
+            expect(rewriteCatalogMarkers('[data-darkreader-inline-bgimage] { background-image: none !important; }'))
+                .toBe('* { --darkreader-inline-bgimage: none !important; }');
         });
 
-        it('stays a single compound when the marker has a prefix', () => {
-            // The bug this guards: a bare comma-separated list splits the rule, and the later
-            // alternatives lose the `g` prefix — so the rule stops being scoped and applies far
-            // more widely than the site fix intended.
-            const out = rewriteCatalogMarkers('g[data-darkreader-inline-fill] { fill: black; }');
-            expect(out).toBe(`g${FILL_PRESENCE} { fill: black; }`);
-            // Specifically: no comma at paren depth 0. A regex cannot do this — the selector
-            // nests `:not(:where(a, b, c))` two deep — and the naive version passed on a
-            // selector that was fine and failed on one that was also fine.
+        it('survives the ${} colour templates, which contain braces', () => {
+            // A body pattern of `[^{}]*` stops at the first `${` and silently matches nothing,
+            // leaving the rule on the presence-test fallback with no test failing.
+            expect(rewriteCatalogMarkers('[data-darkreader-inline-fill] { fill: ${white} !important; }'))
+                .toBe('* { --darkreader-inline-fill: ${white} !important; }');
+        });
+
+        it('leaves the body\'s own whitespace exactly as the catalog wrote it', () => {
+            // The catalog is synced. Reformatting it is churn in every future diff.
+            const css = '[data-darkreader-inline-fill] {\n    fill: #dcdad7 !important;\n}';
+            expect(rewriteCatalogMarkers(css)).toBe('* {\n    --darkreader-inline-fill: #dcdad7 !important;\n}');
+        });
+
+        it('renames case-insensitively, matching the guard that let the rule through', () => {
+            // CSS property names are case-insensitive, so `COLOR: red` passes the guard. A
+            // case-sensitive rename then left the body untouched while the marker was still
+            // stripped from the selector — `* { COLOR: red }`, ungated onto every element.
+            // Not reachable from today's catalog; the catalog is synced.
+            expect(rewriteCatalogMarkers('[data-darkreader-inline-color] { COLOR: red; }'))
+                .toBe('* { --darkreader-inline-color: red; }');
+            expect(rewriteCatalogMarkers('[data-darkreader-inline-fill] { Fill: black; }'))
+                .toBe('* { --darkreader-inline-fill: black; }');
+        });
+
+        it('REFUSES a rule that declares anything else, rather than ungating it', () => {
+            // Upstream gated the WHOLE rule on the marker. Moving only the matching declaration
+            // would leave the others applying unconditionally — a silent widening.
+            //
+            // The fallback is the presence test, which can over- or under-apply but cannot
+            // ungate anything. No catalog rule needs it today; a synced one might, so its shape
+            // is still asserted here — it is the only place it now ships.
+            const css = '[data-darkreader-inline-fill] { fill: black; opacity: 0.5; }';
+            const out = rewriteCatalogMarkers(css);
+            expect(out).toContain('opacity: 0.5');
+            expect(out).not.toContain('--darkreader-inline-fill:');
+            expect(out).toBe(`${FILL_PRESENCE} { fill: black; opacity: 0.5; }`);
+            // And it stays ONE compound, so a prefix cannot be lost from a later alternative.
             expect(topLevelCommas(out.slice(0, out.indexOf('{')))).toBe(0);
-        });
-
-        it('stays scoped inside a descendant selector too', () => {
-            const out = rewriteCatalogMarkers('.foo [data-darkreader-inline-color] { x: y; }');
-            expect(out).toBe(`.foo ${COLOR_PRESENCE} { x: y; }`);
-        });
-
-        it('covers both the attribute and the style-declaration form', () => {
-            // Upstream's marker was written in either case, so both must be matched or the
-            // fix silently stops applying to half the elements it used to.
-            const out = rewriteCatalogMarkers('[data-darkreader-inline-bgcolor] { x: y; }');
-            expect(out).toContain('[bgcolor]');
-            expect(out).toContain('[style^="background-color:"]');
+            expect(rewriteCatalogMarkers('.a [data-darkreader-inline-color] { color: red; z-index: 1; }'))
+                .toBe(`.a ${COLOR_PRESENCE} { color: red; z-index: 1; }`);
         });
     });
 
@@ -188,18 +219,33 @@ describe('rewriteCatalogMarkers', () => {
             expect({unmapped, suffixes}).toEqual({unmapped: [], suffixes});
         });
 
-        it('leaves no rule depending on a marker we no longer write', () => {
+        it('every suffix the catalog SETS has a consumer in the rules we emit', () => {
+            // This is the gate. A `--darkreader-inline-X` the emitter never reads is a site fix
+            // that parses, applies to nothing, and fails silently — which is exactly what the
+            // whole branch-A rewrite was trying to avoid, the wrong way.
+            const set = [...new Set(
+                [...catalog.matchAll(/--darkreader-inline-([a-z-]+)\s*:/g)].map((m) => m[1]),
+            )].sort();
+            expect(set.length).toBeGreaterThan(0);
+            const orphaned = set.filter(
+                (suffix) => markerCustomProperty(MARKER_PROPERTIES[suffix]) !== `--darkreader-inline-${suffix}`,
+            );
+            expect({orphaned, set}).toEqual({orphaned: [], set});
+        });
+
+        it('leaves no rule depending on a marker ATTRIBUTE, which nothing writes any more', () => {
             const out = rewriteCatalogMarkers(catalog);
-            expect(out).not.toContain('--darkreader-inline-');
             expect(out).not.toContain('data-darkreader-inline-');
         });
 
-        it('rewrites every occurrence, and the count is what we measured', () => {
-            const before = (catalog.match(/darkreader-inline-/g) ?? []).length;
-            // 30 references: 19 custom-property sets, 7 selectors, 1 negation, plus 3 more
-            // occurrences on lines that carry two references.
-            expect(before).toBeGreaterThanOrEqual(26);
-            expect((rewriteCatalogMarkers(catalog).match(/darkreader-inline-/g) ?? []).length).toBe(0);
+        it('keeps the custom-property sets, which are how the gate still works', () => {
+            // The inverse of the assertion above, and the one that would have caught ADR 0005
+            // D5's mistake: these must SURVIVE the rewrite.
+            const before = (catalog.match(/--darkreader-inline-[a-z-]+\s*:/g) ?? []).length;
+            const after = (rewriteCatalogMarkers(catalog).match(/--darkreader-inline-[a-z-]+\s*:/g) ?? []).length;
+            expect(before).toBeGreaterThanOrEqual(19);
+            // 19 already there, plus the 6 marker-selecting rules collapsed into the same form.
+            expect(after).toBe(before + 6);
         });
     });
 });

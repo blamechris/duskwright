@@ -50,14 +50,10 @@ export function createBrowserValidator(): SelectorValidator {
  * do not control. Dropping the bad entry degrades to "this one exclusion does not apply",
  * which is both smaller and in the safer direction.
  */
-export function buildIgnoreQualifier(
+export function usableIgnoreSelectors(
     selectors: readonly string[],
     isValid: SelectorValidator,
-): string {
-    if (selectors.length === 0) {
-        return '';
-    }
-
+): string[] {
     const usable: string[] = [];
     for (const raw of selectors) {
         const selector = raw.trim();
@@ -71,7 +67,14 @@ export function buildIgnoreQualifier(
             usable.push(selector);
         }
     }
+    return usable;
+}
 
+export function buildIgnoreQualifier(
+    selectors: readonly string[],
+    isValid: SelectorValidator,
+): string {
+    const usable = usableIgnoreSelectors(selectors, isValid);
     if (usable.length === 0) {
         return '';
     }

@@ -93,6 +93,7 @@ export type UnkeyableReason =
     | 'variable' // value contains var(): the rendered result is not implied by the text
     | 'variable-def' // the property IS a custom property; the engine returns a declaration set
     | 'important' // inline !important beats any author rule we can write (ADR 0005)
+    | 'mask' // a sibling mask-image flips how backgrounds are themed — see MASK_FLIPS_BACKGROUND
     | 'invalid'; // the browser rejected it; expansion was empty
 
 /** Does this reason require removing the whole attribute from tier 1? */
@@ -223,11 +224,16 @@ export function parseInlineDeclarations(attr: string, expand: Expander): Declara
         }
     }
 
+    const masked = maskFlipsBackground(out);
+
     for (const d of out) {
         if (d.longhands.length === 0) {
             d.unkeyable = 'invalid';
         } else if (d.longhands.some(({property}) => longhandCounts.get(property)! > 1)) {
             d.unkeyable = 'duplicate';
+        } else if (masked && d.longhands.some(({property}) => isBackgroundColour(property))) {
+            // ADR 0005 D6. See maskFlipsBackground below.
+            d.unkeyable = 'mask';
         } else if (d.important) {
             // Nothing in tiers 1-4 can beat an inline !important; upstream won it by writing
             // into the attribute. Counted and left alone rather than mis-themed. See ADR 0005.
@@ -239,6 +245,43 @@ export function parseInlineDeclarations(attr: string, expand: Expander): Declara
         }
     }
     return out;
+}
+
+function isBackgroundColour(property: string): boolean {
+    return property.includes('background') && property.includes('color');
+}
+
+/**
+ * Does this attribute carry a mask that changes how its own backgrounds are themed?
+ *
+ * `getColorModifier` (`modify-css.ts:327`) reads the element's `mask-image` when theming a
+ * background colour: with a real mask present it treats the colour as **foreground** instead,
+ * because a masked element's "background" is what the user actually sees as the shape.
+ *
+ * That makes the themed result depend on a SIBLING declaration, which is exactly what a shared
+ * declaration key cannot carry: `background-color:#fff` inside a masked attribute and the same
+ * text inside an unmasked one need two different answers from one selector. So the masked one
+ * is un-keyable rather than mis-keyed.
+ *
+ * Non-colliding (ADR 0005 D6): skipping it leaves nothing behind that another element's rule
+ * would wrongly match, because the collision runs the other way — it is *our* answer that would
+ * be wrong, not the other element's.
+ *
+ * The `none` and `linear-gradient` exclusions mirror upstream's condition exactly rather than
+ * being reasoned about independently; diverging here would mis-theme in the other direction.
+ */
+function maskFlipsBackground(declarations: readonly Declaration[]): boolean {
+    for (const d of declarations) {
+        for (const {property, value} of d.longhands) {
+            if (property !== 'mask-image' && property !== '-webkit-mask-image') {
+                continue;
+            }
+            if (value && !value.startsWith('none') && !value.startsWith('linear-gradient')) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 /** `var(` at the top level of a value, not inside a string. */

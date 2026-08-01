@@ -1,6 +1,7 @@
 import type {Declaration} from './keys';
 import {declarationKey, declarationSelector, escapeCSSString, parseInlineDeclarations, unkeyableCollides} from './keys';
 import type {Expander} from './expand';
+import {markerCustomProperty} from '../catalog-markers';
 
 // The rule table for ADR 0004 tier 1.
 //
@@ -51,6 +52,34 @@ interface Rule {
     body: string;
     /** How many elements currently reference this key. */
     refs: number;
+    /**
+     * 1 for a `style`-attribute declaration, 2 for a presentational attribute.
+     *
+     * Load-bearing for the cascade, not bookkeeping. See `buildCSS`.
+     */
+    tier: 1 | 2;
+}
+
+/**
+ * One themed declaration, routed through the catalog's marker custom property.
+ *
+ * `fill: var(--darkreader-inline-fill, rgb(9,9,9)) !important` lets a per-site fix that sets
+ * `--darkreader-inline-fill` override us on exactly the elements we themed — upstream's gate,
+ * reconstructed rather than approximated (ADR 0006 D4).
+ *
+ * The `initial` is not decoration. **Custom properties inherit and upstream's gate did not**:
+ * upstream declared the property inline on each themed element, so a themed descendant had its
+ * own value. We declare nothing, so without this a themed `<path>` inside a catalog-targeted
+ * `<svg>` would inherit the site fix's colour instead of its own themed one. Measured in
+ * Chromium; `initial` on the same element restores upstream's result exactly, and the catalog's
+ * `!important` still wins on the element it actually targets.
+ */
+function themedDeclaration(property: string, themed: string): string {
+    const marker = markerCustomProperty(property);
+    if (!marker) {
+        return `${property}: ${themed} !important`;
+    }
+    return `${marker}: initial; ${property}: var(${marker}, ${themed}) !important`;
 }
 
 /**
@@ -69,6 +98,18 @@ export interface AttributeSpec {
     qualifier?: string;
     /** Restrict to these element types, e.g. `['line', 'text']`. Takes precedence over `qualifier`. */
     tags?: string[];
+    /**
+     * The value handed to the themer, when it differs from the value in the attribute.
+     *
+     * `<td bgcolor="fff">` renders white, but `fff` is not a colour any parser accepts — the
+     * `#` has to be restored before the colour maths sees it. The *selector* must still match
+     * the attribute exactly as written, so the two cannot be collapsed.
+     *
+     * Deliberately NOT part of the rule shape below: it is a pure function of `attrValue`
+     * within one document, so two elements with the same raw value always derive the same
+     * themed value and can share a rule.
+     */
+    themeValue?: string;
 }
 
 export interface EmitterStats {
@@ -113,6 +154,8 @@ export class InlineRuleEmitter {
     private unkeyableCount = 0;
     private oversizedCount = 0;
     private dirty = false;
+    /** `:not(...)` from the site's `ignoreInlineStyle` selectors, or '' — see `ignore.ts`. */
+    private ignoreQualifier = '';
 
     constructor(
         private readonly themer: Themer,
@@ -206,7 +249,7 @@ export class InlineRuleEmitter {
         attrValue: string | null,
         spec: AttributeSpec,
     ): string | null {
-        const {themeAs, emitAs, qualifier = '', tags} = spec;
+        const {themeAs, emitAs, qualifier = '', tags, themeValue} = spec;
         // The shape is part of the identity: one attribute value themed two different ways for
         // two element types must not collapse into a single rule.
         const shape = `${emitAs}|${themeAs}|${qualifier}|${(tags ?? []).join(',')}`;
@@ -237,20 +280,29 @@ export class InlineRuleEmitter {
         if (rule) {
             rule.refs++;
         } else {
-            const themed = this.themer(themeAs, attrValue);
+            const themed = this.themer(themeAs, themeValue ?? attrValue);
             if (themed == null) {
                 previous?.delete(slot);
                 return null;
             }
             // Themed as one property, emitted as another (ADR 0005 D3).
             const attrSel = `[${attrName}="${escapeCSSString(attrValue)}"]`;
-            const selector = tags && tags.length > 0
-                ? tags.map((tag) => `${tag}${attrSel}`).join(', ')
+            // A tag list is wrapped in `:is()` so the result stays ONE compound selector.
+            // `line[stroke="x"], text[stroke="x"]` is a selector LIST, and everything
+            // downstream — the ignore qualifier, any future qualifier — appends to the selector
+            // and would land on the last alternative only. `:is()` leaves specificity alone: it
+            // takes that of its most specific argument, the same `tag[attr]` it replaced.
+            const tagged = tags && tags.length > 0
+                ? tags.map((tag) => `${tag}${attrSel}`)
+                : null;
+            const selector = tagged
+                ? (tagged.length === 1 ? tagged[0] : `:is(${tagged.join(', ')})`)
                 : `${attrSel}${qualifier}`;
             this.rules.set(key, {
                 selector,
-                body: `${emitAs}: ${themed} !important`,
+                body: themedDeclaration(emitAs, themed),
                 refs: 1,
+                tier: 2,
             });
             this.dirty = true;
         }
@@ -344,7 +396,7 @@ export class InlineRuleEmitter {
                 // `!important` because the page's own inline style outranks any selector we can
                 // write. This is the specificity win ADR 0001 item 4 requires INSTEAD of
                 // deleting the page's declaration, which is what upstream did.
-                bodies.push(`${longhand.property}: ${themed} !important`);
+                bodies.push(themedDeclaration(longhand.property, themed));
             }
         }
         if (bodies.length === 0) {
@@ -355,9 +407,24 @@ export class InlineRuleEmitter {
             selector: declarationSelector(decl),
             body: bodies.join('; '),
             refs: 1,
+            tier: 1,
         });
         this.dirty = true;
         return key;
+    }
+
+    /**
+     * Exclude a region from inline theming — the selector form of `fixes.ignoreInlineStyle`.
+     *
+     * Applied at build time rather than baked into each rule, so changing it cannot leave stale
+     * selectors behind in rules created earlier.
+     */
+    setIgnoreQualifier(qualifier: string): void {
+        if (qualifier === this.ignoreQualifier) {
+            return;
+        }
+        this.ignoreQualifier = qualifier;
+        this.dirty = true;
     }
 
     /** Whether the CSS has changed since the last `markClean()`. */
@@ -369,11 +436,25 @@ export class InlineRuleEmitter {
         this.dirty = false;
     }
 
-    /** The full CSS text for every live key. */
+    /**
+     * The full CSS text for every live key.
+     *
+     * **Tier 2 is emitted before tier 1, and that ordering is a correctness requirement.**
+     * `[bgcolor="#fff"]` and `[style^="background:#fff;"]` are both (0,1,0) and both carry
+     * `!important`, so the later rule wins — and the page's own cascade is unambiguous about
+     * which that must be. `bgcolor` is a presentational hint, which ranks below every author
+     * rule; `style` is inline, which outranks them all. An element carrying both must therefore
+     * be themed from its `style`. Emitting in map order instead would let whichever rule
+     * happened to be created first on the whole page decide, which is not a rule at all.
+     */
     buildCSS(): string {
         const out: string[] = [];
-        for (const rule of this.rules.values()) {
-            out.push(`${rule.selector} { ${rule.body}; }`);
+        for (const tier of [2, 1] as const) {
+            for (const rule of this.rules.values()) {
+                if (rule.tier === tier) {
+                    out.push(`${rule.selector}${this.ignoreQualifier} { ${rule.body}; }`);
+                }
+            }
         }
         return out.join('\n');
     }
