@@ -408,3 +408,66 @@ describe('shorthand expansion (ADR 0005 D1)', () => {
         expect(e.stats().keys).toBe(0);
     });
 });
+
+describe('lifecycle bugs a WeakMap shortcut can hide', () => {
+    const BGCOLOR = {themeAs: 'background-color', emitAs: 'background-color'};
+
+    it('re-themes a presentational attribute after clear()', () => {
+        // `updateAttribute` short-circuits when the slot already holds this key — but `clear()`
+        // cannot empty a WeakMap, so without a generation check the element still claims a rule
+        // that was deleted, returns early, and is never themed again. Exactly the bug the
+        // generation counter was added for on tier 1, missed on tier 2.
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        expect(e.stats().keys).toBe(1);
+
+        e.clear();
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+    });
+
+    it('does not let a stale slot release another element\'s rule', () => {
+        // After clear(), a stale slot names a key that no longer exists. If a DIFFERENT element
+        // has since recreated that key, releasing the stale slot decrements a live rule to zero
+        // and deletes it — un-theming an element that never changed.
+        const e = new InlineRuleEmitter(invert, expand);
+        const stale = el();
+        e.updateAttribute(stale, 'bgcolor', '#fff', BGCOLOR);
+        e.clear();
+
+        const fresh = el();
+        e.updateAttribute(fresh, 'bgcolor', '#fff', BGCOLOR);
+        e.release(stale); // the stale element goes away
+
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+    });
+
+    it('keeps tier-2 rules alive when the style attribute changes', () => {
+        // `update()` releases this element's declaration keys. Releasing the whole token takes
+        // the attribute rules with it, and the caller registers those AFTER the style attribute
+        // — so every style change silently un-themes every bgcolor, stroke and fill on the same
+        // element until the next full pass.
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        e.update(t, 'color:#333');
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+
+        // And again on a genuine change, which is the path the "correct" ordering still hits.
+        e.update(t, 'color:#444');
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+        expect(e.stats().keys).toBe(2);
+    });
+
+    it('still releases both tiers when the element itself goes away', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.update(t, 'color:#333');
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        e.release(t);
+        expect(e.stats().keys).toBe(0);
+    });
+});

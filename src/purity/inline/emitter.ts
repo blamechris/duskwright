@@ -92,8 +92,16 @@ export class InlineRuleEmitter {
      * repaint. That defeats the entire reason this table is reference-counted.
      */
     private readonly lastAttr = new WeakMap<object, {attr: string; generation: number}>();
-    /** Tier-2 keys per element, addressed by `${attrName} ${cssProperty}`. */
-    private readonly attrKeys = new WeakMap<object, Map<string, string>>();
+    /**
+     * Tier-2 keys per element, addressed by `${attrName}<sep>${shape}`.
+     *
+     * Carries a generation for the same reason `lastAttr` does, and it is the same bug:
+     * `updateAttribute` short-circuits when the slot already holds this key, but `clear()`
+     * cannot empty a WeakMap. Without the generation, clearing the table left every element
+     * still claiming its attribute rules exist, so the next identical registration returned
+     * early against a rule that had been deleted and the element was never re-themed.
+     */
+    private readonly attrKeys = new WeakMap<object, {generation: number; slots: Map<string, string>}>();
     /**
      * Bumped by `clear()`. The shortcut above is a cache, and a cache needs an invalidation
      * path: without this, clearing the table leaves `lastAttr` still claiming an element is
@@ -130,7 +138,11 @@ export class InlineRuleEmitter {
             return this.perElement.get(token) ?? [];
         }
 
-        this.release(token);
+        // Declarations only. Releasing the whole token here would take this element's
+        // presentational-attribute rules with it, and the caller registers those AFTER the
+        // style attribute — so every style change would silently un-theme every `bgcolor`,
+        // `stroke` and `fill` on the same element until the next full pass.
+        this.releaseDeclarations(token);
         if (!attr) {
             return [];
         }
@@ -199,7 +211,10 @@ export class InlineRuleEmitter {
         // two element types must not collapse into a single rule.
         const shape = `${emitAs}|${themeAs}|${qualifier}|${(tags ?? []).join(',')}`;
         const slot = `${attrName}${KEY_SEP}${shape}`;
-        const previous = this.attrKeys.get(token);
+        // A stale generation means `clear()` happened: the slots point at rules that no
+        // longer exist, so they are neither read nor released — just replaced.
+        const stored = this.attrKeys.get(token);
+        const previous = stored?.generation === this.generation ? stored.slots : undefined;
         const existingKey = previous?.get(slot);
 
         if (attrValue === null) {
@@ -242,7 +257,7 @@ export class InlineRuleEmitter {
 
         const slots = previous ?? new Map<string, string>();
         slots.set(slot, key);
-        this.attrKeys.set(token, slots);
+        this.attrKeys.set(token, {generation: this.generation, slots});
         return key;
     }
 
@@ -266,12 +281,22 @@ export class InlineRuleEmitter {
         // `<rect fill="…">` in svg-heavy.html, for one.
         const attrs = this.attrKeys.get(token);
         if (attrs) {
-            for (const key of attrs.values()) {
-                this.releaseKey(key);
+            // Only if it is current. A stale slot names a key that `clear()` deleted; if
+            // another element has since recreated that key, releasing it here would
+            // decrement somebody else's rule to zero and delete a live one.
+            if (attrs.generation === this.generation) {
+                for (const key of attrs.slots.values()) {
+                    this.releaseKey(key);
+                }
             }
             this.attrKeys.delete(token);
         }
 
+        this.releaseDeclarations(token);
+    }
+
+    /** Tier-1 keys only. `update()` uses this so it cannot disturb tier-2 registrations. */
+    private releaseDeclarations(token: object): void {
         const previous = this.perElement.get(token);
         if (!previous) {
             return;
