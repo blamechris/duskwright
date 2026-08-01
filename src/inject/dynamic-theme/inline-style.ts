@@ -1,161 +1,134 @@
+// PURITY REWRITE (E2, ADR 0004 + ADR 0005). This file is upstream, and upstream files get
+// minimal edits — but `overrideInlineStyle` IS the violation the project exists to remove, so
+// its body is replaced rather than trimmed.
+//
+// What upstream did: read an element's inline styling, compute a themed value, then write that
+// value into the element's own `style` attribute as a `--darkreader-inline-*` custom property
+// and tag the element with a matching `data-darkreader-inline-*` attribute. Both writes are
+// serializable page state — ADR 0001 items 1-5, and the Google Sheets failure verbatim.
+//
+// What happens now: the element is read and never written. Its declarations are registered with
+// a rule table (`src/purity/inline/`), which emits selectors matching the attribute text into a
+// stylesheet we own. The observers, the element-discovery walk and the shadow-root plumbing
+// below are upstream's and are untouched.
+//
+// Deliberately NOT carried over, each counted in `inlineStyleStats()` rather than dropped
+// silently — see the ADRs for why none of them is expressible as a shared declaration key:
+//   - SVG `fill` on non-`<text>` elements (geometry-dependent modifier, ADR 0005 D4)
+//   - whole-`<svg>` inversion via `data-darkreader-inline-invert` (ADR 0001 item 6)
+//   - `background-image: url(...)` and the `background=` attribute (async + identity-dependent)
+//   - `var()`-valued and inline-`!important` declarations (ADR 0005)
+//
+// Also gone, because both existed only to survive our own writes: the loop detector (a page
+// that rewrote its style attribute in response to ours), and the ProseMirror early return (an
+// editor that rebuilt its HTML after we wrote). Neither can be provoked by a reader.
+
 import type {Theme} from '../../definitions';
-import {forEach, push} from '../../utils/array';
+import {push} from '../../utils/array';
 import {isShadowDomSupported} from '../../utils/platform';
 import {throttle} from '../../utils/throttle';
 import {getDuration} from '../../utils/time';
-import {getAbsoluteURL} from '../../utils/url';
-import {iterateShadowHosts, createOptimizedTreeObserver, isReadyStateComplete, addReadyStateCompleteListener, addDOMReadyListener, isDOMReady} from '../utils/dom';
+import {iterateShadowHosts, createOptimizedTreeObserver} from '../utils/dom';
+import {InlineStyleEngine} from '../../purity/inline/engine';
+import type {InlineEngineStats} from '../../purity/inline/engine';
+import {createProbeExpander} from '../../purity/inline/expand';
+import {createBrowserValidator} from '../../purity/inline/ignore';
 
-import {iterateCSSDeclarations} from './css-rules';
-import {getImageDetails} from './image';
+import type {CSSValueModifier} from './modify-css';
 import {getModifiableCSSDeclaration} from './modify-css';
-import type {CSSVariableModifier, ModifiedVarDeclaration} from './variables';
 import {variablesStore} from './variables';
 
-
-interface Overrides {
-    [cssProp: string]: {
-        customProp: string;
-        cssProp: string;
-        dataAttr: string;
-    };
-}
-
-const overrides: Overrides = {
-    'background-color': {
-        customProp: '--darkreader-inline-bgcolor',
-        cssProp: 'background-color',
-        dataAttr: 'data-darkreader-inline-bgcolor',
-    },
-    'background-image': {
-        customProp: '--darkreader-inline-bgimage',
-        cssProp: 'background-image',
-        dataAttr: 'data-darkreader-inline-bgimage',
-    },
-    'border-color': {
-        customProp: '--darkreader-inline-border',
-        cssProp: 'border-color',
-        dataAttr: 'data-darkreader-inline-border',
-    },
-    'border-bottom-color': {
-        customProp: '--darkreader-inline-border-bottom',
-        cssProp: 'border-bottom-color',
-        dataAttr: 'data-darkreader-inline-border-bottom',
-    },
-    'border-left-color': {
-        customProp: '--darkreader-inline-border-left',
-        cssProp: 'border-left-color',
-        dataAttr: 'data-darkreader-inline-border-left',
-    },
-    'border-right-color': {
-        customProp: '--darkreader-inline-border-right',
-        cssProp: 'border-right-color',
-        dataAttr: 'data-darkreader-inline-border-right',
-    },
-    'border-top-color': {
-        customProp: '--darkreader-inline-border-top',
-        cssProp: 'border-top-color',
-        dataAttr: 'data-darkreader-inline-border-top',
-    },
-    'box-shadow': {
-        customProp: '--darkreader-inline-boxshadow',
-        cssProp: 'box-shadow',
-        dataAttr: 'data-darkreader-inline-boxshadow',
-    },
-    'color': {
-        customProp: '--darkreader-inline-color',
-        cssProp: 'color',
-        dataAttr: 'data-darkreader-inline-color',
-    },
-    'fill': {
-        customProp: '--darkreader-inline-fill',
-        cssProp: 'fill',
-        dataAttr: 'data-darkreader-inline-fill',
-    },
-    'stroke': {
-        customProp: '--darkreader-inline-stroke',
-        cssProp: 'stroke',
-        dataAttr: 'data-darkreader-inline-stroke',
-    },
-    'outline-color': {
-        customProp: '--darkreader-inline-outline',
-        cssProp: 'outline-color',
-        dataAttr: 'data-darkreader-inline-outline',
-    },
-    'stop-color': {
-        customProp: '--darkreader-inline-stopcolor',
-        cssProp: 'stop-color',
-        dataAttr: 'data-darkreader-inline-stopcolor',
-    },
-};
-
-const shorthandOverrides: Overrides = {
-    'background': {
-        customProp: '--darkreader-inline-bg',
-        cssProp: 'background',
-        dataAttr: 'data-darkreader-inline-bg',
-    },
-    'border': {
-        customProp: '--darkreader-inline-border-short',
-        cssProp: 'border',
-        dataAttr: 'data-darkreader-inline-border-short',
-    },
-    'border-bottom': {
-        customProp: '--darkreader-inline-border-bottom-short',
-        cssProp: 'border-bottom',
-        dataAttr: 'data-darkreader-inline-border-bottom-short',
-    },
-    'border-left': {
-        customProp: '--darkreader-inline-border-left-short',
-        cssProp: 'border-left',
-        dataAttr: 'data-darkreader-inline-border-left-short',
-    },
-    'border-right': {
-        customProp: '--darkreader-inline-border-right-short',
-        cssProp: 'border-right',
-        dataAttr: 'data-darkreader-inline-border-right-short',
-    },
-    'border-top': {
-        customProp: '--darkreader-inline-border-top-short',
-        cssProp: 'border-top',
-        dataAttr: 'data-darkreader-inline-border-top-short',
-    },
-};
-
-const overridesList = Object.values(overrides);
-const normalizedPropList: Record<string, string> = {};
-overridesList.forEach(({cssProp, customProp}) => normalizedPropList[customProp] = cssProp);
-
-/**
- * Does the engine still write `data-darkreader-inline-*` marker attributes onto page elements?
- *
- * This is ADR 0001 items 1-5 — the violation E2 exists to remove — and it is still true. It is
- * declared as a named constant because one other decision hangs off it: the fixes catalog's use
- * of those markers (ADR 0005 D5) must be rewritten if and only if they are no longer written,
- * and getting that sequencing wrong breaks site fixes in both directions at once. See
- * `replaceCSSTemplates` in `index.ts`.
- *
- * Deleted, along with the branch that reads it, by the change that flips it to false.
- */
-export const ENGINE_WRITES_INLINE_MARKERS = true;
 
 const INLINE_STYLE_ATTRS = ['style', 'fill', 'stop-color', 'stroke', 'bgcolor', 'color', 'background'];
 export const INLINE_STYLE_SELECTOR = INLINE_STYLE_ATTRS.map((attr) => `[${attr}]`).join(', ');
 
-export function getInlineOverrideStyle(): string {
-    const allOverrides = overridesList.concat(Object.values(shorthandOverrides));
-    return allOverrides.map(({dataAttr, customProp, cssProp}) => {
-        return [
-            `[${dataAttr}] {`,
-            `  ${cssProp}: var(${customProp}) !important;`,
-            '}',
-        ].join('\n');
-    }).concat([
-        '[data-darkreader-inline-invert] {',
-        '    filter: invert(100%) hue-rotate(180deg);',
-        '}',
-    ]).join('\n');
+let currentTheme: Theme | null = null;
+let ignoreImageSelectors: string[] = [];
+
+/**
+ * A detached element used to hand the modifier a style context.
+ *
+ * `getModifiableCSSDeclaration` reads sibling declarations off the rule it is given — border
+ * widths, `mask-image` — so it needs *a* style object. It must not be the page element's:
+ * the whole premise of declaration keying is that one rule serves every element carrying that
+ * declaration, so an answer that varies by element is unsound no matter how convenient.
+ *
+ * Never inserted, never observed, invisible to the page — the same argument as the shorthand
+ * probe in `expand.ts`.
+ */
+let modifierProbe: HTMLElement | null = null;
+
+function themeDeclaration(property: string, value: string): string | null | Promise<string | null> {
+    // Both shapes return a declaration SET rather than a value, and both are already marked
+    // un-keyable before they reach tier 1. Refused here too, so the tier-2 attribute path
+    // cannot reach the modifier factory and subscribe to variable type changes.
+    if (property.startsWith('--') || value.includes('var(')) {
+        return null;
+    }
+    if (!modifierProbe) {
+        modifierProbe = document.createElement('div');
+    }
+    modifierProbe.style.cssText = '';
+    modifierProbe.style.cssText = `${property}: ${value}`;
+
+    asyncCancelled = false;
+    const mod = getModifiableCSSDeclaration(
+        property,
+        value,
+        {style: modifierProbe.style, selectorText: ''} as CSSStyleRule,
+        variablesStore,
+        ignoreImageSelectors,
+        isAsyncCancelled,
+    );
+    if (!mod || !currentTheme) {
+        return null;
+    }
+    const themed = typeof mod.value === 'function'
+        ? (mod.value as CSSValueModifier)(currentTheme)
+        : mod.value;
+    if (typeof themed === 'string') {
+        return themed;
+    }
+    return themed instanceof Promise ? themed : null;
 }
+
+let engine: InlineStyleEngine | null = null;
+
+function inlineEngine(): InlineStyleEngine {
+    if (!engine) {
+        engine = new InlineStyleEngine({
+            themer: themeDeclaration,
+            expand: createProbeExpander(),
+            isValidSelector: createBrowserValidator(),
+        });
+    }
+    return engine;
+}
+
+/**
+ * The current rule text. Empty until elements have been registered — the sheet is filled in by
+ * `commitInlineStyles()` as they are discovered, not once at startup.
+ */
+export function getInlineOverrideStyle(): string {
+    return inlineEngine().buildCSS();
+}
+
+/** Keep one of our `<style>` elements in sync: the document's, or a shadow root's. */
+export function attachInlineStyleSheet(style: HTMLStyleElement): void {
+    inlineEngine().attachSheet(style);
+}
+
+/** Write pending rules into every attached sheet. Cheap when nothing changed. */
+export function commitInlineStyles(): void {
+    inlineEngine().commit();
+}
+
+/** Theming this build cannot express, counted so the gap stays visible. */
+export function inlineStyleStats(): InlineEngineStats {
+    return inlineEngine().stats();
+}
+
+const commitInlineStylesThrottled = throttle(() => inlineEngine().commit());
 
 function getInlineStyleElements(root: Node) {
     const results: HTMLElement[] = [];
@@ -280,7 +253,9 @@ function deepWatchForInlineStyles(
     });
     attrObserver.observe(root, {
         attributes: true,
-        attributeFilter: INLINE_STYLE_ATTRS.concat(overridesList.map(({dataAttr}) => dataAttr)),
+        // Upstream also watched its own `data-darkreader-inline-*` markers here, because it
+        // wrote them and had to notice a page stripping them back off. Nothing writes them now.
+        attributeFilter: INLINE_STYLE_ATTRS,
         subtree: true,
     });
     attrObservers.set(root, attrObserver);
@@ -292,353 +267,37 @@ export function stopWatchingForInlineStyles(): void {
     attrObservers.forEach((o) => o.disconnect());
     treeObservers.clear();
     attrObservers.clear();
-    inlineStringValueCache.clear();
+    commitInlineStylesThrottled.cancel();
+    inlineEngine().clear();
 }
 
-const inlineStyleCache = new WeakMap<HTMLElement, string>();
-const svgInversionCache = new WeakSet<SVGSVGElement>();
-const svgAnalysisConditionCache = new WeakMap<SVGSVGElement, boolean>();
-const themeProps: Array<keyof Theme> = ['brightness', 'contrast', 'grayscale', 'sepia', 'mode'];
+/**
+ * Register an element's inline styling. **Writes nothing to the element.**
+ *
+ * The signature is upstream's so the call sites in `index.ts` are unchanged. What it does is
+ * not: the element is read, its declarations are keyed, and the rules land in a sheet we own.
+ * See the file header for what that costs and what it removes.
+ */
+export function overrideInlineStyle(
+    element: HTMLElement,
+    theme: Theme,
+    ignoreInlineSelectors: string[],
+    ignoreImageAnalysisSelectors: string[],
+): void {
+    currentTheme = theme;
+    ignoreImageSelectors = ignoreImageAnalysisSelectors;
+    inlineEngine().setIgnoreSelectors(ignoreInlineSelectors);
+    inlineEngine().register(element);
 
-function shouldAnalyzeSVGAsImage(svg: SVGSVGElement) {
-    if (svgAnalysisConditionCache.has(svg)) {
-        return svgAnalysisConditionCache.get(svg);
-    }
-    const shouldAnalyze = Boolean(
-        svg && (
-            svg.getAttribute('class')?.includes('logo') ||
-            svg.parentElement?.getAttribute('class')?.includes('logo')
-        )
-    );
-    svgAnalysisConditionCache.set(svg, shouldAnalyze);
-    return shouldAnalyze;
-}
-
-let prevTheme: Theme | null = null;
-let themeKey = '';
-
-function getThemeKey(theme: Theme): string {
-    if (theme === prevTheme) {
-        return themeKey;
-    }
-    themeKey = '';
-    for (let i = 0; i < themeProps.length; i++) {
-        const prop = themeProps[i];
-        themeKey += `${prop}="${theme[prop]}" `;
-    }
-    prevTheme = theme;
-    return themeKey;
-}
-
-function getInlineStyleCacheKey(el: HTMLElement, theme: Theme): string {
-    const attrKey = INLINE_STYLE_ATTRS.map((attr) => `${attr}="${el.getAttribute(attr)}"`);
-    return `${attrKey} ${getThemeKey(theme)}`;
-}
-
-function shouldIgnoreInlineStyle(element: HTMLElement, selectors: string[]): boolean {
-    for (let i = 0, len = selectors.length; i < len; i++) {
-        const ingnoredSelector = selectors[i];
-        if (element.matches(ingnoredSelector)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-const LOOP_DETECTION_THRESHOLD = 1000;
-const MAX_LOOP_CYCLES = 10;
-const elementsLastChanges = new WeakMap<Node, number>();
-const elementsLoopCycles = new WeakMap<Node, number>();
-
-const SMALL_SVG_THRESHOLD = 32;
-const svgNodesRoots = new WeakMap<Node, SVGSVGElement | null>();
-const svgRootSizeTestResults = new WeakMap<SVGSVGElement, boolean>();
-
-function getSVGElementRoot(svgElement: SVGElement): SVGSVGElement | null {
-    if (!svgElement) {
-        return null;
-    }
-
-    if (svgNodesRoots.has(svgElement)) {
-        return svgNodesRoots.get(svgElement)!;
-    }
-
-    if (svgElement instanceof SVGSVGElement) {
-        return svgElement;
-    }
-
-    const parent = svgElement.parentNode as SVGElement;
-    const root = getSVGElementRoot(parent!);
-    svgNodesRoots.set(svgElement, root);
-    return root;
-}
-
-const inlineStringValueCache = new Map<string, Map<string, string>>();
-
-export function overrideInlineStyle(element: HTMLElement, theme: Theme, ignoreInlineSelectors: string[], ignoreImageSelectors: string[]): void {
-    if (elementsLastChanges.has(element)) {
-        if (Date.now() - elementsLastChanges.get(element)! < LOOP_DETECTION_THRESHOLD) {
-            const cycles = elementsLoopCycles.get(element) ?? 0;
-            elementsLoopCycles.set(element, cycles + 1);
-        } else {
-            elementsLoopCycles.delete(element);
-        }
-        if ((elementsLoopCycles.get(element) ?? 0) >= MAX_LOOP_CYCLES) {
-            return;
-        }
-    }
-
-    // ProseMirror editor rebuilds entire HTML after style changes
-    if (element.parentElement?.dataset.nodeViewContent) {
-        return;
-    }
-
-    const cacheKey = getInlineStyleCacheKey(element, theme);
-    if (cacheKey === inlineStyleCache.get(element)) {
-        return;
-    }
-
-    const unsetProps = new Set(Object.keys(overrides));
-
-    function setCustomProp(targetCSSProp: string, modifierCSSProp: string, cssVal: string) {
-        const cachedStringValue = inlineStringValueCache.get(modifierCSSProp)?.get(cssVal);
-        if (cachedStringValue) {
-            setStaticValue(cachedStringValue);
-            return;
-        }
-
-        asyncCancelled = false;
-        const mod = getModifiableCSSDeclaration(
-            modifierCSSProp,
-            cssVal,
-            {style: element.style} as CSSStyleRule,
-            variablesStore,
-            ignoreImageSelectors,
-            isAsyncCancelled,
-        );
-        if (!mod) {
-            return;
-        }
-
-        function setStaticValue(value: string) {
-            const {customProp, dataAttr} = overrides[targetCSSProp] ?? shorthandOverrides[targetCSSProp];
-            element.style.setProperty(customProp, value);
-            if (!element.hasAttribute(dataAttr)) {
-                element.setAttribute(dataAttr, '');
-            }
-            unsetProps.delete(targetCSSProp);
-        }
-
-        function setVarDeclaration(mod: ReturnType<CSSVariableModifier>) {
-            let prevDeclarations: ModifiedVarDeclaration[] = [];
-
-            function setProps(declarations: ModifiedVarDeclaration[]) {
-                prevDeclarations.forEach(({property}) => {
-                    element.style.removeProperty(property);
-                });
-                declarations.forEach(({property, value}) => {
-                    if (!(value instanceof Promise)) {
-                        element.style.setProperty(property, value);
-                    }
-                });
-                prevDeclarations = declarations;
-            }
-
-            setProps(mod.declarations);
-            mod.onTypeChange.addListener(setProps);
-        }
-
-        function setAsyncValue(promise: Promise<string | null>, sourceValue: string) {
-            promise.then((value) => {
-                if (value && targetCSSProp === 'background' && value.startsWith('var(--darkreader-bg--')) {
-                    setStaticValue(value);
-                }
-                if (value && targetCSSProp === 'background-image') {
-                    if ((element === document.documentElement || element === document.body) && value === sourceValue) {
-                        // Remove big bright backgrounds from root or body
-                        value = 'none';
-                    }
-                    setStaticValue(value);
-                }
-                inlineStyleCache.set(element, getInlineStyleCacheKey(element, theme));
-            });
-        }
-
-        const value = typeof mod.value === 'function' ? mod.value(theme) : mod.value;
-        if (typeof value === 'string') {
-            setStaticValue(value);
-            if (!inlineStringValueCache.has(modifierCSSProp)) {
-                inlineStringValueCache.set(modifierCSSProp, new Map());
-            }
-            inlineStringValueCache.get(modifierCSSProp)!.set(cssVal, value);
-        } else if (value instanceof Promise) {
-            setAsyncValue(value, cssVal);
-        } else if (typeof value === 'object') {
-            setVarDeclaration(value);
-        }
-    }
-
-    if (ignoreInlineSelectors.length > 0) {
-        if (shouldIgnoreInlineStyle(element, ignoreInlineSelectors)) {
-            unsetProps.forEach((cssProp) => {
-                element.removeAttribute(overrides[cssProp].dataAttr);
-            });
-            return;
-        }
-    }
-
-    const isSVGElement = element instanceof SVGElement;
-    const svg = isSVGElement ? element.ownerSVGElement ?? (element instanceof SVGSVGElement ? element : null) : null;
-    if (isSVGElement && theme.mode === 1 && svg) {
-        if (svgInversionCache.has(svg)) {
-            return;
-        }
-        if (shouldAnalyzeSVGAsImage(svg)) {
-            svgInversionCache.add(svg);
-            const analyzeSVGAsImage = () => {
-                let svgString = svg.outerHTML;
-                svgString = svgString.replaceAll('<style class="darkreader darkreader--sync" media="screen"></style>', '');
-                const dataURL = `data:image/svg+xml;base64,${btoa(svgString)}`;
-                getImageDetails(dataURL).then((details) => {
-                    if (
-                        (details.isDark && details.isTransparent) ||
-                        (details.isLarge && details.isLight && !details.isTransparent)
-                    ) {
-                        svg.setAttribute('data-darkreader-inline-invert', '');
-                    } else {
-                        svg.removeAttribute('data-darkreader-inline-invert');
-                    }
-                });
-            };
-            analyzeSVGAsImage();
-            if (!isDOMReady()) {
-                addDOMReadyListener(analyzeSVGAsImage);
-            }
-            return;
-        }
-    }
-
-    if (element.hasAttribute('bgcolor')) {
-        let value = element.getAttribute('bgcolor')!;
-        if (value.match(/^[0-9a-f]{3}$/i) || value.match(/^[0-9a-f]{6}$/i)) {
-            value = `#${value}`;
-        }
-        setCustomProp('background-color', 'background-color', value);
-    }
-
-    if (
-        (element === document.documentElement || element === document.body) &&
-        element.hasAttribute('background') &&
-        element.getAttribute('background') !== ''
-    ) {
-        const url = getAbsoluteURL(location.href, element.getAttribute('background') ?? '');
-        const value = `url("${url}")`;
-        setCustomProp('background-image', 'background-image', value);
-    }
-
-    // We can catch some link elements here, that are from `<link rel="mask-icon" color="#000000">`.
-    // It's valid HTML code according to the specs, https://html.spec.whatwg.org/#attr-link-color
-    // We don't want to touch such links, as it cause weird browser behavior (silent DOMException).
-    if (element.hasAttribute('color') && (element as HTMLLinkElement).rel !== 'mask-icon') {
-        let value = element.getAttribute('color')!;
-        if (value.match(/^[0-9a-f]{3}$/i) || value.match(/^[0-9a-f]{6}$/i)) {
-            value = `#${value}`;
-        } else if (value.match(/^#?[0-9a-f]{4}$/i)) {
-            const hex = value.startsWith('#') ? value.substring(1) : value;
-            value = `#${hex}00`;
-        }
-        setCustomProp('color', 'color', value);
-    }
-
-    if (isSVGElement) {
-        if (element.hasAttribute('fill')) {
-            const value = element.getAttribute('fill')!;
-            if (value !== 'none' && value !== 'currentColor') {
-                if (!(element instanceof SVGTextElement)) {
-                    // getBoundingClientRect forces a layout change. And when it happens and
-                    // the DOM is not in the `complete` readystate, it will cause the layout to be drawn
-                    // and it will cause a layout of unstyled content which results in white flashes.
-                    // Therefore, check if the DOM is at the `complete` readystate.
-                    const handleSVGElement = () => {
-                        let isSVGSmall = false;
-                        const root = getSVGElementRoot(element);
-                        if (!root) {
-                            return;
-                        }
-                        if (svgRootSizeTestResults.has(root)) {
-                            isSVGSmall = svgRootSizeTestResults.get(root)!;
-                        } else {
-                            const svgBounds = root.getBoundingClientRect();
-                            isSVGSmall = svgBounds.width * svgBounds.height <= SMALL_SVG_THRESHOLD ** 2;
-                            svgRootSizeTestResults.set(root, isSVGSmall);
-                        }
-                        let isBg: boolean;
-                        if (isSVGSmall) {
-                            isBg = false;
-                        } else {
-                            const {width, height} = element.getBoundingClientRect();
-                            isBg = (width > SMALL_SVG_THRESHOLD || height > SMALL_SVG_THRESHOLD);
-                        }
-                        setCustomProp('fill', isBg ? 'background-color' : 'color', value);
-                    };
-
-                    if (isReadyStateComplete()) {
-                        handleSVGElement();
-                    } else {
-                        addReadyStateCompleteListener(handleSVGElement);
-                    }
-                } else {
-                    setCustomProp('fill', 'color', value);
-                }
-            }
-        }
-        if (element.hasAttribute('stop-color')) {
-            setCustomProp('stop-color', 'background-color', element.getAttribute('stop-color')!);
-        }
-    }
-
-    if (element.hasAttribute('stroke')) {
-        const value = element.getAttribute('stroke')!;
-        setCustomProp('stroke', element instanceof SVGLineElement || element instanceof SVGTextElement ? 'border-color' : 'color', value);
-    }
-
-    element.style && iterateCSSDeclarations(element.style, (property, value) => {
-        // Temporarily ignore background images due to the possible performance
-        // issues and complexity of handling async requests.
-        if (property === 'background-image' && value.includes('url')) {
-            if (element === document.documentElement || element === document.body) {
-                setCustomProp(property, property, value);
-            }
-            return;
-        }
-        if (overrides.hasOwnProperty(property) || (property.startsWith('--') && !normalizedPropList[property])) {
-            setCustomProp(property, property, value);
-        } else if (shorthandOverrides[property] && value.includes('var(')) {
-            setCustomProp(property, property, value);
-        } else {
-            const overriddenProp = normalizedPropList[property];
-            if (overriddenProp &&
-                (!element.style.getPropertyValue(overriddenProp) && !element.hasAttribute(overriddenProp))) {
-                if (overriddenProp === 'background-color' && element.hasAttribute('bgcolor')) {
-                    return;
-                }
-                element.style.setProperty(property, '');
-            }
-        }
-    });
-
-    if (element.style && element instanceof SVGTextElement && element.style.fill) {
-        setCustomProp('fill', 'color', element.style.getPropertyValue('fill'));
-    }
-
-    if (element.getAttribute('style')?.includes('--')) {
+    // Upstream fed inline custom properties to the variable store from inside its write path.
+    // Kept because it only READS the declaration block — it is how `--darkreader-root-vars`
+    // learns about variables the page defined inline.
+    if (element.style && element.getAttribute('style')?.includes('--')) {
         variablesStore.addInlineStyleForMatching(element.style);
     }
 
-    forEach(unsetProps, (cssProp) => {
-        element.removeAttribute(overrides[cssProp].dataAttr);
-    });
-    inlineStyleCache.set(element, getInlineStyleCacheKey(element, theme));
-
-    elementsLastChanges.set(element, Date.now());
+    // Coalesced to one sheet write per frame: the discovery pass calls this once per element,
+    // and `index.ts` commits synchronously at the end of that pass so the first paint is not
+    // a frame late.
+    commitInlineStylesThrottled();
 }

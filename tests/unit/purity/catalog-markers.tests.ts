@@ -1,7 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 
-import {rewriteCatalogMarkers, findMarkerSuffixes, MARKER_PROPERTIES} from '../../../src/purity/catalog-markers';
+import {rewriteCatalogMarkers, findMarkerSuffixes, MARKER_PROPERTIES, markerCustomProperty} from '../../../src/purity/catalog-markers';
 
 // The catalog is synced from upstream on a schedule (E9), so this transform is what keeps ~26
 // site fixes working after the marker attributes were removed. A regression here is silent:
@@ -26,21 +26,30 @@ function topLevelCommas(selector: string): number {
 }
 
 describe('rewriteCatalogMarkers', () => {
-    describe('A — custom-property sets', () => {
-        it('writes the real property instead of the handoff custom property', () => {
-            expect(rewriteCatalogMarkers('.a { --darkreader-inline-fill: #110133 !important; }'))
-                .toBe('.a { fill: #110133 !important; }');
+    describe('A — custom-property sets are LEFT ALONE', () => {
+        // ADR 0005 D5 said to rewrite these into the real property and called it "exactly
+        // equivalent". It is not: the custom property was inert unless the element carried the
+        // marker, because the generated marker rule was its only consumer — and that consumer
+        // WAS the gate on "did the engine theme this element?". Rewriting deletes the gate.
+        //
+        // Our emitted rules consume the property instead (ADR 0006 D4), so there is nothing to
+        // rewrite. These tests exist to stop the old behaviour coming back.
+        it('leaves a custom-property set exactly as written', () => {
+            const css = '.a { --darkreader-inline-fill: #110133 !important; }';
+            expect(rewriteCatalogMarkers(css)).toBe(css);
         });
 
-        it('maps a suffix whose name is not the property', () => {
-            // bgcolor means background-color. Getting this wrong mis-themes silently.
-            expect(rewriteCatalogMarkers('.a { --darkreader-inline-bgcolor: #fff; }'))
-                .toBe('.a { background-color: #fff; }');
+        it('leaves the multi-word border suffixes alone too', () => {
+            const css = '.a { --darkreader-inline-border-top: red; }';
+            expect(rewriteCatalogMarkers(css)).toBe(css);
         });
 
-        it('handles the multi-word border suffixes', () => {
-            expect(rewriteCatalogMarkers('.a { --darkreader-inline-border-top: red; }'))
-                .toBe('.a { border-top-color: red; }');
+        it('does not turn the set into the real property', () => {
+            // The specific regression: `--darkreader-inline-bgcolor: #fff` becoming
+            // `background-color: #fff`, which applies to every element the selector matches.
+            const out = rewriteCatalogMarkers('pre { --darkreader-inline-bgcolor: royalblue !important; }');
+            expect(out).not.toContain('background-color:');
+            expect(out).toContain('--darkreader-inline-bgcolor: royalblue !important');
         });
     });
 
@@ -188,18 +197,32 @@ describe('rewriteCatalogMarkers', () => {
             expect({unmapped, suffixes}).toEqual({unmapped: [], suffixes});
         });
 
-        it('leaves no rule depending on a marker we no longer write', () => {
+        it('every suffix the catalog SETS has a consumer in the rules we emit', () => {
+            // This is the gate. A `--darkreader-inline-X` the emitter never reads is a site fix
+            // that parses, applies to nothing, and fails silently — which is exactly what the
+            // whole branch-A rewrite was trying to avoid, the wrong way.
+            const set = [...new Set(
+                [...catalog.matchAll(/--darkreader-inline-([a-z-]+)\s*:/g)].map((m) => m[1]),
+            )].sort();
+            expect(set.length).toBeGreaterThan(0);
+            const orphaned = set.filter(
+                (suffix) => markerCustomProperty(MARKER_PROPERTIES[suffix]) !== `--darkreader-inline-${suffix}`,
+            );
+            expect({orphaned, set}).toEqual({orphaned: [], set});
+        });
+
+        it('leaves no rule depending on a marker ATTRIBUTE, which nothing writes any more', () => {
             const out = rewriteCatalogMarkers(catalog);
-            expect(out).not.toContain('--darkreader-inline-');
             expect(out).not.toContain('data-darkreader-inline-');
         });
 
-        it('rewrites every occurrence, and the count is what we measured', () => {
-            const before = (catalog.match(/darkreader-inline-/g) ?? []).length;
-            // 30 references: 19 custom-property sets, 7 selectors, 1 negation, plus 3 more
-            // occurrences on lines that carry two references.
-            expect(before).toBeGreaterThanOrEqual(26);
-            expect((rewriteCatalogMarkers(catalog).match(/darkreader-inline-/g) ?? []).length).toBe(0);
+        it('keeps the custom-property sets, which are how the gate still works', () => {
+            // The inverse of the assertion above, and the one that would have caught ADR 0005
+            // D5's mistake: these must SURVIVE the rewrite.
+            const before = (catalog.match(/--darkreader-inline-[a-z-]+\s*:/g) ?? []).length;
+            const after = (rewriteCatalogMarkers(catalog).match(/--darkreader-inline-[a-z-]+\s*:/g) ?? []).length;
+            expect(before).toBeGreaterThanOrEqual(19);
+            expect(after).toBe(before);
         });
     });
 });

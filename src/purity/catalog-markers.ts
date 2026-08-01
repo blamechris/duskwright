@@ -233,13 +233,17 @@ export function rewriteCatalogMarkers(cssText: string): string {
         return inlinePresenceSelector(suffix) ?? match;
     });
 
-    // A — marker used as a custom-property set. The custom property was only ever a handoff to
-    // the marker rule, so writing the real property directly is exactly equivalent, and the
-    // catalog rule already targets the element itself.
-    out = out.replace(SET_CUSTOM_PROP, (match, suffix: string) => {
-        const styleProp = MARKER_PROPERTIES[suffix];
-        return styleProp ? `${styleProp}:` : match;
-    });
+    // A — rules that SET a marker custom property are LEFT EXACTLY AS WRITTEN.
+    //
+    // ADR 0005 D5 said to rewrite them into the real property and called that "exactly
+    // equivalent". It is not, and the mistake is instructive: the custom property was inert
+    // unless the element carried the marker, because the generated marker rule was its only
+    // consumer — and that consumer WAS the gate. Rewriting the declaration deletes it, so the
+    // fix lands on every element the catalog selector matches. Measured: `<path fill="none">`
+    // painted white, an unmarked `<pre>` given a background it never had.
+    //
+    // The rules we emit consume the property instead (ADR 0006 D4), so the gate is
+    // reconstructed rather than approximated and there is nothing here to rewrite.
 
     return out;
 }
@@ -253,4 +257,25 @@ export function findMarkerSuffixes(cssText: string): string[] {
         }
     }
     return [...found].sort();
+}
+
+/**
+ * The marker custom property a themed declaration must read through, or null.
+ *
+ * This is the inverse of `MARKER_PROPERTIES`, and it is what reconstructs the catalog's gate
+ * (ADR 0006 D4). Upstream's `[data-darkreader-inline-fill] { fill: var(--darkreader-inline-fill) }`
+ * was the *only* consumer of the catalog's `--darkreader-inline-fill` declarations, and that is
+ * what made them apply only to elements the engine had themed. Our emitted rules take over that
+ * role: reading the property with the themed value as fallback restores the gate exactly, rather
+ * than approximating it with a presence selector — which this module got wrong three times.
+ *
+ * Derived from the same table the rewrite uses, so the two cannot drift apart.
+ */
+export function markerCustomProperty(cssProperty: string): string | null {
+    for (const suffix of Object.keys(MARKER_PROPERTIES)) {
+        if (MARKER_PROPERTIES[suffix] === cssProperty) {
+            return `--darkreader-inline-${suffix}`;
+        }
+    }
+    return null;
 }

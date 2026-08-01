@@ -16,7 +16,7 @@ import type {AdoptedStyleSheetManager} from './adopted-style-manger';
 import {createAdoptedStyleSheetOverride, canHaveAdoptedStyleSheets} from './adopted-style-manger';
 import {combineFixes, findRelevantFix} from './fixes';
 import {getStyleInjectionMode, injectStyleAway, removeStyleContainer} from './injection';
-import {overrideInlineStyle, getInlineOverrideStyle, watchForInlineStyles, stopWatchingForInlineStyles, INLINE_STYLE_SELECTOR, ENGINE_WRITES_INLINE_MARKERS} from './inline-style';
+import {overrideInlineStyle, getInlineOverrideStyle, attachInlineStyleSheet, commitInlineStyles, watchForInlineStyles, stopWatchingForInlineStyles, INLINE_STYLE_SELECTOR} from './inline-style';
 import {changeMetaThemeColorWhenAvailable, restoreMetaThemeColor} from './meta-theme-color';
 import {modifyBackgroundColor, modifyBorderColor, modifyForegroundColor} from './modify-colors';
 import {getModifiedUserAgentStyle, getModifiedFallbackStyle, cleanModificationCache, getSelectionColor, setFilterSelectorHandler} from './modify-css';
@@ -223,6 +223,9 @@ function createStaticStyleOverrides() {
 
     const inlineStyle = createOrUpdateStyle('darkreader--inline');
     inlineStyle.textContent = getInlineOverrideStyle();
+    // The inline sheet is no longer static: it holds one rule per distinct inline declaration
+    // and is refilled as elements are discovered. See ADR 0004.
+    attachInlineStyleSheet(inlineStyle);
     injectStaticStyle(inlineStyle, invertStyle, 'inline');
 
     const variableStyle = createOrUpdateStyle('darkreader--variables');
@@ -266,6 +269,9 @@ const shadowRootsWithOverrides = new Set<ShadowRoot>();
 function createShadowStaticStyleOverridesInner(root: ShadowRoot) {
     const inlineStyle = createOrUpdateStyle('darkreader--inline', root);
     inlineStyle.textContent = getInlineOverrideStyle();
+    // A shadow root needs its own copy: an attribute selector in the document sheet does not
+    // reach into it.
+    attachInlineStyleSheet(inlineStyle);
     root.insertBefore(inlineStyle, root.firstChild);
     const overrideStyle = createOrUpdateStyle('darkreader--override', root);
     overrideStyle.textContent = fixes && fixes.css ? replaceCSSTemplates(fixes.css) : '';
@@ -309,25 +315,17 @@ function createShadowStaticStyleOverrides(root: ShadowRoot) {
 }
 
 function replaceCSSTemplates($cssText: string) {
-    // A load-time rewrite of the synced catalog, replacing something the engine used to provide
-    // by writing to a page-owned element: the scheme attribute on <html> (ADR 0001 item 7).
-    // Doing it here keeps the catalog itself unedited, so E9's scheduled sync stays clean.
-    let resolved = resolveSchemeSelectors($cssText, theme!.mode ? 'dark' : 'dimmed');
-
-    // The inline-marker rewrite (ADR 0005 D5) is the SECOND one, and it must not run yet.
+    // Two load-time rewrites of the synced catalog, both replacing things the engine used to
+    // provide by writing to page-owned elements: the scheme attribute on <html> (ADR 0001
+    // item 7) and the inline marker attributes (ADR 0006 D4). Doing it here keeps the catalog
+    // itself unedited, so E9's scheduled sync stays clean.
     //
-    // While the engine still writes `data-darkreader-inline-*`, those markers work exactly as
-    // upstream intended and the rewrite can only make things worse: catalog rules that set a
-    // `--darkreader-inline-*` custom property were inert unless the element carried the marker,
-    // so rewriting them to the real property removes that gate — and the rewritten rule then
-    // competes with the still-live marker rule instead of feeding it.
-    //
-    // It is turned on by the same change that stops the marker writes, where the gate is
-    // restored properly rather than approximated. Landed ahead of its caller, and tested, the
-    // same way the rest of the rule table was.
-    if (!ENGINE_WRITES_INLINE_MARKERS) {
-        resolved = rewriteCatalogMarkers(resolved);
-    }
+    // Turned on by this change, and only by it. `ENGINE_WRITES_INLINE_MARKERS` guarded it
+    // until now: while the engine still wrote the markers they worked exactly as upstream
+    // intended, and rewriting the catalog could only break them.
+    const resolved = rewriteCatalogMarkers(
+        resolveSchemeSelectors($cssText, theme!.mode ? 'dark' : 'dimmed'),
+    );
     return resolved.replace(/\${(.+?)}/g, (_, $color) => {
         const color = parseColorWithCache($color);
         if (color) {
@@ -391,6 +389,10 @@ function createDynamicStyleOverrides() {
         }
     });
     inlineStyleElements.forEach((el: HTMLElement) => overrideInlineStyle(el, theme!, ignoredInlineSelectors, ignoredImageAnalysisSelectors));
+    // Flush synchronously: the per-element registration above coalesces its sheet writes to
+    // the next frame, and waiting for it would leave inline-styled content unthemed for a
+    // frame on every render.
+    commitInlineStyles();
     handleAdoptedStyleSheets(document);
     variablesStore.matchVariablesAndDependents();
 
@@ -550,6 +552,7 @@ function watchForUpdates() {
         const inlineStyleElements = root.querySelectorAll(INLINE_STYLE_SELECTOR) as NodeListOf<HTMLElement>;
         if (inlineStyleElements.length > 0) {
             forEach(inlineStyleElements, (el: HTMLElement) => overrideInlineStyle(el, theme!, ignoredInlineSelectors, ignoredImageAnalysisSelectors));
+            commitInlineStyles();
         }
     });
 
