@@ -197,6 +197,89 @@ const NEGATED_MARKER = /:not\(\[data-darkreader-inline-([a-z-]+)\]\)/g;
 const MARKER_SELECTOR = /\[data-darkreader-inline-([a-z-]+)\]/g;
 
 /**
+ * A whole rule whose SELECTOR tests a marker: compound, rest of the selector, and body.
+ *
+ * The body pattern tolerates `${...}` colour templates, which contain braces — a plain
+ * `[^{}]*` stops at the first `${` and silently matches nothing.
+ */
+const MARKER_RULE =
+    /([^\s>+~,{}]*)\[data-darkreader-inline-([a-z-]+)\]([^\s>+~,{}]*)([^{}]*)\{((?:[^{}]|\$\{[^{}]*\})*)\}/g;
+
+/** Split a declaration block on top-level `;`, leaving `${...}` templates intact. */
+function splitDeclarations(body: string): string[] {
+    const out: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < body.length; i++) {
+        const c = body[i];
+        if (c === '{' || c === '(') {
+            depth++;
+        } else if (c === '}' || c === ')') {
+            depth--;
+        } else if (c === ';' && depth === 0) {
+            out.push(body.slice(start, i));
+            start = i + 1;
+        }
+    }
+    out.push(body.slice(start));
+    return out.filter((d) => d.trim() !== '');
+}
+
+/**
+ * Rewrite a marker-selecting rule into one that SETS the marker custom property.
+ *
+ *     [data-darkreader-inline-fill] { fill: black !important }
+ *       ->  * { --darkreader-inline-fill: black !important }
+ *     g[data-darkreader-inline-fill] { fill: X }
+ *       ->  g { --darkreader-inline-fill: X }
+ *
+ * This is exact, where a presence selector could only ever approximate. The rule now says
+ * "for these elements, if we themed their fill, use this colour instead" — because the only
+ * consumer of that property is the rule WE emit, on exactly the elements we themed. It is
+ * automatically right for the properties we no longer theme at all, too: nothing reads the
+ * property there, so the fix is inert, which is precisely what upstream's unwritten marker
+ * would have produced.
+ *
+ * Returns null when the body declares anything other than the marker's own property. Upstream
+ * gated the WHOLE rule on the marker, and moving only the matching declarations would ungate
+ * the rest. All six rules in the catalog today are single-property; a synced rule that is not
+ * degrades to "this fix does not apply", which is honest.
+ */
+function collapseMarkerRule(
+    compoundBefore: string,
+    suffix: string,
+    compoundAfter: string,
+    restOfSelector: string,
+    body: string,
+): string | null {
+    const styleProp = MARKER_PROPERTIES[suffix];
+    if (!styleProp) {
+        return null;
+    }
+    const declarations = splitDeclarations(body);
+    if (declarations.length === 0) {
+        return null;
+    }
+    for (const declaration of declarations) {
+        const colon = declaration.indexOf(':');
+        if (colon === -1 || declaration.slice(0, colon).trim().toLowerCase() !== styleProp) {
+            return null;
+        }
+    }
+    // Rename in place rather than re-joining the split parts, so the body's own whitespace
+    // survives byte-for-byte. The catalog is synced; gratuitous reformatting of it is churn
+    // that shows up in every future diff.
+    const escaped = styleProp.replace(/[-]/g, '\\-');
+    const newBody = body.replace(
+        new RegExp(`(^|;)(\\s*)${escaped}(\\s*):`, 'g'),
+        `$1$2--darkreader-inline-${suffix}$3:`,
+    );
+    // Removing the marker can empty the compound entirely: `[data-…]` on its own becomes `*`.
+    const compound = `${compoundBefore}${compoundAfter}` || '*';
+    return `${compound}${restOfSelector}{${newBody}}`;
+}
+
+/**
  * Rewrite catalog CSS so it stops depending on marker attributes we no longer write.
  *
  * Order matters — see the C branch below.
@@ -228,7 +311,17 @@ export function rewriteCatalogMarkers(cssText: string): string {
         return parts ? `:not(${parts.join(', ')})` : match;
     });
 
-    // B — marker used as a selector.
+    // B — marker used as a selector. Collapsed into a rule that SETS the marker custom
+    // property, which the rules we emit already consume (ADR 0006 D4). That is exact: the
+    // property is read on exactly the elements we themed, so there is no presence test to get
+    // wrong — and this module got one wrong three times.
+    out = out.replace(MARKER_RULE, (match, before: string, suffix: string, after: string, rest: string, body: string) => {
+        return collapseMarkerRule(before, suffix, after, rest, body) ?? match;
+    });
+
+    // Anything the collapse refused keeps the presence-test approximation, which is the honest
+    // fallback: it can over- or under-apply, but it cannot silently ungate declarations the
+    // rule never meant to apply unconditionally.
     out = out.replace(MARKER_SELECTOR, (match, suffix: string) => {
         return inlinePresenceSelector(suffix) ?? match;
     });

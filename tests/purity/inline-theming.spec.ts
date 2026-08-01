@@ -76,6 +76,32 @@ async function probe(file: string, selectors: string[], extraCSS?: string): Prom
     }
 }
 
+/** One computed property for several selectors, for cases the Probe shape does not cover. */
+async function probeProperty(file: string, selectors: string[], property: string): Promise<Record<string, string>> {
+    const context = await launchContext(true);
+    try {
+        const page = await context.newPage();
+        await page.goto(`${servers.pagesOrigin}/${file}`, {waitUntil: 'load'});
+        await page.waitForTimeout(SETTLE_MS);
+        const out = await page.evaluate(([list, prop]) => {
+            const result: Record<string, string> = {};
+            for (const selector of list as string[]) {
+                const el = document.querySelector(selector);
+                // Recorded as a distinguishable value rather than skipped: a selector that
+                // matches nothing must fail an assertion, not quietly drop it.
+                result[selector] = el
+                    ? getComputedStyle(el).getPropertyValue(prop as string)
+                    : '<<no such element>>';
+            }
+            return result;
+        }, [selectors, property] as const);
+        await page.close();
+        return out;
+    } finally {
+        await context.close();
+    }
+}
+
 /** Roughly: is this colour dark? Parses `rgb(r, g, b)` / `rgba(...)`. */
 function isDark(colour: string): boolean {
     const m = colour.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
@@ -160,4 +186,66 @@ test('a themed descendant keeps its own colour under a site fix aimed at its anc
         found[cell].color,
         'a site fix on <body> leaked into a themed descendant — the marker property is inheriting',
     ).not.toBe('rgb(1, 240, 1)');
+});
+
+test.describe('tier 2 — the legacy presentational attributes', () => {
+    // These had NO browser coverage before this block. Every assertion above probes `style`
+    // attributes, so `attributeRegistrations()` could have returned `[]`, or `themeAs` and
+    // `emitAs` could have been swapped, and the entire purity corpus plus this file would have
+    // stayed green while every legacy colour attribute silently stopped being themed. That is
+    // exactly the invisible failure the tier-2 spec table was written to prevent.
+
+    test('bgcolor and color are themed, including without the # the spec does not require', async () => {
+        const ids = ['#bg-hash', '#bg-bare', '#bg-short', '#bg-named', '#font-color', '#font-bare'];
+        const found = await probe('legacy-color-attributes.html', ids);
+        expect(Object.keys(found)).toEqual(ids);
+
+        for (const sel of ['#bg-hash', '#bg-bare', '#bg-short', '#bg-named']) {
+            expect(
+                isDark(found[sel].backgroundColor),
+                `${sel} background ${found[sel].backgroundColor} left light — bgcolor not themed`,
+            ).toBe(true);
+        }
+        // `<font color="111111">` is valid and renders dark; the value repair is what lets the
+        // colour maths see it at all. Without it the themer is handed `111111`, parses nothing,
+        // and the element keeps a near-black foreground on a dark background.
+        for (const sel of ['#font-color', '#font-bare']) {
+            expect(
+                isDark(found[sel].color),
+                `${sel} text ${found[sel].color} stayed dark — the value repair did not apply`,
+            ).toBe(false);
+        }
+    });
+
+    test('themeAs and emitAs stay separate — stroke is emitted as stroke', async () => {
+        // ADR 0005 D3. `stroke` is themed as a border colour on <line>/<text> and as foreground
+        // elsewhere, but must ALWAYS be emitted as `stroke`. Emitting `border-color` on an SVG
+        // shape parses fine and paints nothing at all, which no mutation assertion can see.
+        const ids = ['#svg-rect', '#svg-line', '#svg-text-stroke'];
+        const found = await probe('legacy-color-attributes.html', ids);
+        expect(Object.keys(found)).toEqual(ids);
+
+        const stroke = await probeProperty('legacy-color-attributes.html', ids, 'stroke');
+        for (const sel of ids) {
+            expect(stroke[sel], `${sel} stroke was not themed`).not.toBe('rgb(51, 51, 51)');
+            expect(stroke[sel], `${sel} lost its stroke entirely`).not.toBe('none');
+        }
+    });
+
+    test('fill on <text> is themed; on a shape it is deferred, not guessed', async () => {
+        // ADR 0005 D4: a shape's fill modifier depends on measured geometry, so one selector
+        // would have to give two answers. Deferring is counted (#78); guessing would be silent
+        // mis-theming. <text> is unconditional and therefore keyable.
+        const fills = await probeProperty(
+            'legacy-color-attributes.html',
+            ['#svg-text', '#svg-rect', '#fill-none', '#fill-current'],
+            'fill',
+        );
+        expect(fills['#svg-text'], '<text fill> was not themed').not.toBe('rgb(34, 34, 34)');
+        // Not asserted as themed: the shape is deferred on purpose. Asserted as UNCHANGED, so
+        // "we started guessing" would fail here rather than pass silently.
+        expect(fills['#svg-rect'], 'a shape fill was themed by guesswork').toBe('rgb(255, 255, 255)');
+        // `none` and `currentColor` were never themed upstream and must still not be.
+        expect(fills['#fill-none']).toBe('none');
+    });
 });

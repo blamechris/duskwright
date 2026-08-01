@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Legacy presentational colour attributes</title>
+<style>
+body{font:15px system-ui;margin:0;padding:24px}
+table{border-collapse:collapse;margin:12px 0}
+td,th{padding:8px 14px;border:1px solid #999}
+h2{font:600 13px/1 ui-monospace;margin:16px 0 6px;color:#555}
+</style></head>
+<body>
+<h1>Legacy colour attributes</h1>
+
+<p>HTML's presentational colour attributes and SVG's presentation attributes are ADR 0004
+<strong>tier 2</strong>: their whole value is the value, so there is no declaration boundary to
+anchor and the selector is a plain exact match. Nothing else in the corpus carries them, which
+means every tier-2 path — the <code>themeAs</code>/<code>emitAs</code> split, the value
+repair, the element-type qualifiers — had no browser coverage at all.</p>
+
+<p>They are still honoured by every browser and still common in email templates, older CMS
+output, and generated report tables.</p>
+
+<section>
+  <h2>bgcolor — with and without the # the spec does not require</h2>
+  <table>
+    <tr>
+      <td id="bg-hash" bgcolor="#ffffff">bgcolor="#ffffff"</td>
+      <td id="bg-bare" bgcolor="ffffff">bgcolor="ffffff"</td>
+      <td id="bg-short" bgcolor="fff">bgcolor="fff"</td>
+      <td id="bg-named" bgcolor="white">bgcolor="white"</td>
+    </tr>
+  </table>
+</section>
+
+<section>
+  <h2>color</h2>
+  <p><font id="font-color" color="#111111">font color="#111111"</font></p>
+  <p><font id="font-bare" color="111111">font color="111111"</font></p>
+</section>
+
+<section>
+  <h2>SVG presentation attributes</h2>
+  <!-- fill on <text> is themed as foreground unconditionally, so it is keyable (ADR 0005 D4).
+       fill on a shape depends on measured geometry and is deferred to tier 3 (#78). -->
+  <svg width="240" height="70">
+    <rect id="svg-rect" x="0" y="0" width="110" height="60" fill="#ffffff" stroke="#333333"></rect>
+    <text id="svg-text" x="130" y="24" fill="#222222" font-size="13">text fill</text>
+    <text id="svg-text-stroke" x="130" y="46" stroke="#444444" fill="none" font-size="13">text stroke</text>
+    <line id="svg-line" x1="0" y1="66" x2="240" y2="66" stroke="#555555" stroke-width="2"></line>
+  </svg>
+</section>
+
+<section>
+  <h2>Values the engine never themed, and must still not</h2>
+  <svg width="120" height="40">
+    <defs><linearGradient id="grad"><stop id="svg-stop" offset="0" stop-color="#eeeeee"></stop></linearGradient></defs>
+    <rect id="fill-none" width="50" height="30" fill="none" stroke="#666666"></rect>
+    <rect id="fill-current" x="60" width="50" height="30" fill="currentColor"></rect>
+  </svg>
+</section>
+</body>
+</html>

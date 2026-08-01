@@ -118,16 +118,35 @@ The property is read only where our rule matches, which is exactly where we them
 restored, by construction rather than by approximation. Where the catalog sets nothing, the
 fallback is the themed value and nothing changes.
 
-All seven catalog rules that *select* on a marker declare exactly the property their marker
-stands for, so they collapse into the same shape — `[data-darkreader-inline-fill] { fill: X }`
-becomes `* { --darkreader-inline-fill: X }`. That retires the presence-test selector entirely,
-along with #80, #81 and #82.
+All six catalog rules that *select* on a marker declare exactly the property their marker stands
+for, so they collapse into the same shape:
 
-**What still needs a presence test:** the single catalog rule that *negates* a marker. There is
-no custom property to read for "we did not theme this", so it keeps a deliberately **broad**
-presence test. The two directions want opposite errors — under `:not()`, every shape the test
-misses is an element the fix wrongly applies to, overriding the page's own inline style — so
-broad here and narrow in the positive direction both err toward "the fix does not apply".
+```css
+[data-darkreader-inline-fill] { fill: X }   ->   * { --darkreader-inline-fill: X }
+g[data-darkreader-inline-fill] { fill: X }  ->   g { --darkreader-inline-fill: X }
+```
+
+The collapse is refused when the body declares anything else. Upstream gated the **whole rule**
+on the marker, so moving only the matching declarations would leave the rest applying
+unconditionally — a silent widening. Such a rule keeps the presence-test fallback, which can
+over- or under-apply but cannot ungate a declaration.
+
+This is also automatically right for the properties we no longer theme at all. Nothing reads
+`--darkreader-inline-bgimage` now, so a fix keyed on it is inert — which is exactly what
+upstream's unwritten marker would have produced. The presence-test version over-applied instead:
+measured, `[data-darkreader-inline-bgimage] { background-image: none }` wiped the background of
+every element carrying an inline `background-image:`, where upstream marked only `<html>` and
+`<body>`.
+
+**One presence test survives**, on the single catalog rule that *negates* a marker: there is no
+custom property to read for "we did not theme this". It is deliberately **broad**, because the
+two directions want opposite errors — under `:not()`, every shape the test misses is an element
+the fix wrongly applies to, overriding the page's own inline style. Broad here and narrow in the
+positive direction both err toward "the fix does not apply".
+
+That one rule now applies slightly *less* often than upstream: it restores a map background that
+inline theming used to break, and inline background images are no longer themed at all, so
+skipping it is arguably the more correct behaviour now. The residual half of #80 covers it.
 
 **Sequencing.** The rewrite is inert until this change lands (`ENGINE_WRITES_INLINE_MARKERS`).
 While the engine still writes markers they work exactly as upstream intended, and rewriting the

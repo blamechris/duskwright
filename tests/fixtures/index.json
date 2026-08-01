@@ -78,6 +78,9 @@
     {"file": "ignore-inline-style.html", "epics": ["E2", "E7"],
      "note": "229 catalog sites use ignoreInlineStyle. Under declaration keying it cannot be an early return: each pair here carries a byte-identical style attribute, one inside an ignored region and one outside, so a dropped exclusion makes them indistinguishable to the emitter and themes both."},
 
+    {"file": "legacy-color-attributes.html", "epics": ["E2"],
+     "note": "ADR 0004 tier 2. bgcolor/color/fill/stroke/stop-color are presentational attributes with no declaration boundary to anchor, so they take a plain exact-match selector and a separate themeAs/emitAs pair. Nothing else in the corpus carries them, which left every tier-2 path — the value repair, the element-type qualifiers, the themeAs/emitAs split — with no browser coverage at all."},
+
     {"file": "css-variables.html", "epics": ["E2"],
      "note": "Resolution through custom properties, including a locally overridden scope."}
   ],
