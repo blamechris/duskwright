@@ -30,7 +30,15 @@ import {ignoresEverything, usableIgnoreSelectors} from './ignore';
  */
 export type InlineThemer = (property: string, value: string) => string | null | Promise<string | null>;
 
-/** Work this step deliberately does not do, counted rather than silently skipped. */
+/**
+ * Work this step deliberately does not do, counted rather than silently skipped.
+ *
+ * These count **encounters, not elements**. The discovery pass re-visits every element on each
+ * render, so on a churning page they are running totals rather than a current gauge — do not
+ * read `svgFill` as "this page has N un-themed shape fills". #87 tracks making them per-element,
+ * together with the thing that has to come first: `inlineStyleStats()` has no caller, and an
+ * unreachable counter is the same as no counter. Its consumer is E6 coverage reporting.
+ */
 export interface DeferredCounts {
     /**
      * SVG `fill` on anything but `<text>` (ADR 0005 D4). Upstream picks the modifier from the
