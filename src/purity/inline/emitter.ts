@@ -295,14 +295,26 @@ export class InlineRuleEmitter {
         this.releaseDeclarations(token);
     }
 
-    /** Tier-1 keys only. `update()` uses this so it cannot disturb tier-2 registrations. */
+    /**
+     * Tier-1 keys only. `update()` uses this so it cannot disturb tier-2 registrations.
+     *
+     * Generation-gated for the same reason `attrKeys` is, and it is the same bug in the other
+     * half: after `clear()` these keys name rules that no longer exist. If another element has
+     * since recreated one, releasing it here decrements a LIVE rule to zero and deletes it —
+     * un-theming an element that never changed, with nothing looking wrong at the time.
+     *
+     * `lastAttr` carries the generation because it is set and deleted in lockstep with
+     * `perElement`, so there is one generation stamp rather than two that can disagree.
+     */
     private releaseDeclarations(token: object): void {
         const previous = this.perElement.get(token);
         if (!previous) {
             return;
         }
-        for (const key of previous) {
-            this.releaseKey(key);
+        if (this.lastAttr.get(token)?.generation === this.generation) {
+            for (const key of previous) {
+                this.releaseKey(key);
+            }
         }
         this.perElement.delete(token);
         this.lastAttr.delete(token);

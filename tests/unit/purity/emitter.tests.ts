@@ -471,3 +471,49 @@ describe('lifecycle bugs a WeakMap shortcut can hide', () => {
         expect(e.stats().keys).toBe(0);
     });
 });
+
+describe('the tier-1 half of the same stale-key bug', () => {
+    // The tier-2 tests above have exact twins here. Fixing one half and not the other is the
+    // pattern this epic keeps repeating, so both halves are asserted side by side.
+
+    it('does not let a stale declaration release another element\'s rule', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        const stale = el();
+        e.update(stale, 'color:#333');
+        e.clear();
+
+        const fresh = el();
+        e.update(fresh, 'color:#333');
+        e.release(stale);
+
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[style="color:#333"]');
+    });
+
+    it('does not corrupt the refcount when a stale element re-registers', () => {
+        // The nastier shape: nothing looks wrong at the time. The stale element releases the
+        // live rule and immediately recreates it, so refs reads 1 for two elements — and the
+        // NEXT release un-themes an element that never changed.
+        const e = new InlineRuleEmitter(invert, expand);
+        const stale = el();
+        e.update(stale, 'color:#333');
+        e.clear();
+
+        const fresh = el();
+        e.update(fresh, 'color:#333');
+        e.update(stale, 'color:#333');
+        e.release(fresh);
+
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[style="color:#333"]');
+    });
+
+    it('re-themes a declaration after clear(), like tier 2 does', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.update(t, 'color:#333');
+        e.clear();
+        e.update(t, 'color:#333');
+        expect(e.stats().keys).toBe(1);
+    });
+});
