@@ -132,8 +132,9 @@ unconditionally — a silent widening. Such a rule keeps the presence-test fallb
 over- or under-apply but cannot ungate a declaration.
 
 This is also automatically right for the properties we no longer theme at all. Nothing reads
-`--darkreader-inline-bgimage` now, so a fix keyed on it is inert — which is exactly what
-upstream's unwritten marker would have produced. The presence-test version over-applied instead:
+`--darkreader-inline-bgimage` on an element whose background image we declined to theme — the
+`url()` case — so a fix keyed on it is inert there, which is exactly what upstream's unwritten
+marker would have produced. (A themed *gradient* still reads it, and should: we themed that one.) The presence-test version over-applied instead:
 measured, `[data-darkreader-inline-bgimage] { background-image: none }` wiped the background of
 every element carrying an inline `background-image:`, where upstream marked only `<html>` and
 `<body>`.

@@ -114,6 +114,17 @@ describe('rewriteCatalogMarkers', () => {
             expect(rewriteCatalogMarkers(css)).toBe('* {\n    --darkreader-inline-fill: #dcdad7 !important;\n}');
         });
 
+        it('renames case-insensitively, matching the guard that let the rule through', () => {
+            // CSS property names are case-insensitive, so `COLOR: red` passes the guard. A
+            // case-sensitive rename then left the body untouched while the marker was still
+            // stripped from the selector — `* { COLOR: red }`, ungated onto every element.
+            // Not reachable from today's catalog; the catalog is synced.
+            expect(rewriteCatalogMarkers('[data-darkreader-inline-color] { COLOR: red; }'))
+                .toBe('* { --darkreader-inline-color: red; }');
+            expect(rewriteCatalogMarkers('[data-darkreader-inline-fill] { Fill: black; }'))
+                .toBe('* { --darkreader-inline-fill: black; }');
+        });
+
         it('REFUSES a rule that declares anything else, rather than ungating it', () => {
             // Upstream gated the WHOLE rule on the marker. Moving only the matching declaration
             // would leave the others applying unconditionally — a silent widening.

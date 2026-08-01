@@ -270,8 +270,13 @@ function collapseMarkerRule(
     // survives byte-for-byte. The catalog is synced; gratuitous reformatting of it is churn
     // that shows up in every future diff.
     const escaped = styleProp.replace(/[-]/g, '\\-');
+    // Case-INSENSITIVE, matching the guard above. CSS property names are case-insensitive, so
+    // `COLOR: red` passes the guard; a case-sensitive rename then left the body untouched while
+    // the marker was still stripped from the selector, turning the rule into
+    // `* { COLOR: red }` — ungated onto every element. Not reachable from today's catalog, but
+    // the catalog is synced and nothing here would have caught it.
     const newBody = body.replace(
-        new RegExp(`(^|;)(\\s*)${escaped}(\\s*):`, 'g'),
+        new RegExp(`(^|;)(\\s*)${escaped}(\\s*):`, 'gi'),
         `$1$2--darkreader-inline-${suffix}$3:`,
     );
     // Removing the marker can empty the compound entirely: `[data-…]` on its own becomes `*`.
