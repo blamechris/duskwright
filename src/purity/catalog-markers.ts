@@ -47,35 +47,85 @@ export const MARKER_PROPERTIES: Readonly<Record<string, string>> = {
 };
 
 /**
- * The selector that means "this element has an inline X", now that no marker exists.
+ * The style-attribute forms of "this element declares P inline", anchored at the left
+ * declaration boundary.
  *
- * A presentational attribute where one exists, plus the style-attribute form. Both are needed:
+ * A bare `[style*="color:"]` is WRONG, and wrong in the direction that silently over-applies:
+ * it also matches `background-color:`, `border-color:`, `caret-color:` and every other
+ * `*-color` property, because they all contain the substring. That is the same cross-match
+ * `keys.ts` was written to avoid (ADR 0004 note 2), confirmed in Chromium both times.
+ *
+ * There is no right boundary to anchor against here — unlike a declaration key, we know the
+ * property but not the value — so the anchor is the left one: either the attribute starts with
+ * it, or a `;` precedes it. Both spacings are listed because the CSSOM re-serializes with
+ * `"; "` while authored markup usually has no space, and `*=` is a literal substring match.
+ */
+function styleDeclarationAlternates(property: string): string[] {
+    return [
+        `[style^="${property}:"]`,
+        `[style*=";${property}:"]`,
+        `[style*="; ${property}:"]`,
+    ];
+}
+
+/**
+ * The presentational-attribute form, minus the values that were never themed.
+ *
+ * `[fill]` alone is too broad: it matches `fill="none"`, `fill="currentColor"` and
+ * `fill="url(#gradient)"`, and upstream wrote its marker only when the colour maths actually
+ * produced a value — `none` and `currentColor` are skipped outright, and `url(...)` fails to
+ * parse as a colour. Those elements never carried the marker, so a rule keyed on it never
+ * reached them. photopea.com is an all-SVG UI with one of these rules; getting this wrong
+ * repaints its entire interface.
+ *
+ * The `i` flag matters: CSS keywords are case-insensitive, so `fill="currentcolor"` is the
+ * same value and an exact-match exclusion would miss it.
+ */
+function presentationalAlternate(attr: string): string {
+    return `[${attr}]:not([${attr}="none" i]):not([${attr}="currentColor" i]):not([${attr}^="url(" i])`;
+}
+
+/**
+ * Every selector that means "this element has an inline X", now that no marker exists.
+ *
+ * A presentational attribute where one exists, plus the style-attribute forms. Both are needed:
  * `<svg fill="#fff">` carries the attribute, `<svg style="fill:#fff">` carries the declaration,
  * and upstream's marker covered both because it was written in either case.
  */
-function inlinePresenceSelector(suffix: string): string | null {
+function inlinePresenceAlternates(suffix: string): string[] | null {
     const styleProp = MARKER_PROPERTIES[suffix];
     if (!styleProp) {
         return null;
     }
-    const parts = [`[style*="${styleProp}:"]`];
-    // The legacy presentational attributes that upstream also reads.
-    if (suffix === 'fill' || suffix === 'stroke' || suffix === 'color') {
-        parts.unshift(`[${suffix}]`);
-    } else if (suffix === 'bgcolor') {
-        parts.unshift('[bgcolor]');
+    const parts: string[] = [];
+    // The legacy presentational attributes that upstream also reads. `color` and `bgcolor` are
+    // HTML attributes parsed with the legacy colour rules, which yield a colour for nearly any
+    // input, so they carry no value exclusions.
+    if (suffix === 'fill' || suffix === 'stroke') {
+        parts.push(presentationalAlternate(suffix));
+    } else if (suffix === 'color' || suffix === 'bgcolor') {
+        parts.push(`[${suffix}]`);
     }
+    parts.push(...styleDeclarationAlternates(styleProp));
+    return parts;
+}
 
-    // Wrapped in :is() so the result stays ONE compound selector.
-    //
-    // A bare comma-separated list breaks any rule where the marker sits inside a compound:
-    // `g[data-darkreader-inline-fill]` would become `g[fill], [style*="fill:"]`, and the second
-    // alternative silently loses the `g` prefix — the rule stops being scoped and applies far
-    // more widely than the site fix intended. Same failure shape as the :not() ordering issue
-    // below, in a different position.
-    //
-    // :is() also keeps specificity predictable: it takes that of its most specific argument,
-    // and both arguments here are single attribute selectors.
+/**
+ * The above as a single compound selector.
+ *
+ * Wrapped in `:is()` because a bare comma-separated list breaks any rule where the marker sits
+ * inside a compound: `g[data-darkreader-inline-fill]` would become `g[fill], [style*="fill:"]`,
+ * and the second alternative silently loses the `g` prefix — the rule stops being scoped and
+ * applies far more widely than the site fix intended.
+ *
+ * `:is()` also keeps specificity predictable: it takes that of its most specific argument, and
+ * every argument here is a single attribute selector (possibly with `:not()`s of the same).
+ */
+function inlinePresenceSelector(suffix: string): string | null {
+    const parts = inlinePresenceAlternates(suffix);
+    if (!parts) {
+        return null;
+    }
     return parts.length === 1 ? parts[0] : `:is(${parts.join(', ')})`;
 }
 
@@ -111,9 +161,7 @@ const MARKER_SELECTOR = /\[data-darkreader-inline-([a-z-]+)\]/g;
 /**
  * Rewrite catalog CSS so it stops depending on marker attributes we no longer write.
  *
- * Order matters: the negated form must be handled BEFORE the plain selector form, or the
- * `[data-…]` inside `:not(…)` gets rewritten first and the negation is left wrapping a
- * selector list, which is both wrong and, for `:not()`, a specificity change.
+ * Order matters — see the C branch below.
  */
 export function rewriteCatalogMarkers(cssText: string): string {
     let out = cssText;
@@ -126,13 +174,17 @@ export function rewriteCatalogMarkers(cssText: string): string {
 
     // C — negated markers. `:not([data-darkreader-inline-bgimage])` becomes a negation of the
     // real presence test. Left unrewritten, this would match everything and over-apply.
+    //
+    // Handled BEFORE the plain selector form: otherwise the `[data-…]` inside `:not(…)` gets
+    // rewritten first and the negation ends up wrapping an `:is()` that was built for a
+    // different position.
+    //
+    // `:not()` takes a full selector list — `:not(a, b)` matches elements matching neither,
+    // which is exactly what is wanted here (verified in Chromium; an earlier comment claimed
+    // otherwise and used a deliberately narrower single-alternative form as a result).
     out = out.replace(NEGATED_MARKER, (match, suffix: string) => {
-        const styleProp = MARKER_PROPERTIES[suffix];
-        // `:not()` takes a selector list, but a comma inside `:not()` changes meaning, so the
-        // presence test here is the style-attribute form only. That is the conservative
-        // direction: it can leave the rule applying slightly more often than upstream, never
-        // less, and the alternative is dropping a site fix entirely.
-        return styleProp ? `:not([style*="${styleProp}:"])` : match;
+        const parts = inlinePresenceAlternates(suffix);
+        return parts ? `:not(${parts.join(', ')})` : match;
     });
 
     // B — marker used as a selector.

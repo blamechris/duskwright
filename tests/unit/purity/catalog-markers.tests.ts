@@ -28,27 +28,57 @@ describe('rewriteCatalogMarkers', () => {
         });
     });
 
+    // The presence tests, written out once by hand. Recomputing them from the module's own
+    // helpers would assert that the code equals itself.
+    //
+    // Two properties matter and neither is visible by reading the string:
+    //   - the style form is anchored at the LEFT declaration boundary, or `[style*="color:"]`
+    //     also matches `background-color:`, `border-color:` and `caret-color:`
+    //   - the attribute form excludes the values upstream never themed, or `[fill]` reaches
+    //     `fill="none"` and `fill="url(#g)"` and repaints elements the marker never touched
+    // Both are verified against a real parser in tests/purity/catalog-markers-browser.spec.ts.
+    const FILL_PRESENCE = ':is([fill]:not([fill="none" i]):not([fill="currentColor" i]):not([fill^="url(" i]), '
+        + '[style^="fill:"], [style*=";fill:"], [style*="; fill:"])';
+    const COLOR_PRESENCE = ':is([color], [style^="color:"], [style*=";color:"], [style*="; color:"])';
+    const BGIMAGE_ALTERNATES = '[style^="background-image:"], [style*=";background-image:"], [style*="; background-image:"]';
+
     describe('B — marker used as a selector', () => {
         it('replaces it with a real presence test', () => {
             const out = rewriteCatalogMarkers('[data-darkreader-inline-fill] { fill: black !important; }');
-            expect(out).toContain('[fill]');
-            expect(out).toContain('[style*="fill:"]');
+            expect(out).toBe(`${FILL_PRESENCE} { fill: black !important; }`);
             expect(out).not.toContain('data-darkreader-inline');
         });
 
+        it('anchors the style form so it cannot match the *-color family', () => {
+            // The regression this guards: a bare `[style*="color:"]`, which is the same
+            // cross-match keys.ts exists to prevent (ADR 0004 note 2).
+            const out = rewriteCatalogMarkers('[data-darkreader-inline-color] { x: y; }');
+            expect(out).toContain('[style^="color:"]');
+            expect(out).not.toContain('[style*="color:"]');
+        });
+
+        it('excludes the attribute values upstream never themed', () => {
+            // `none` and `currentColor` are skipped by the colour maths outright, and `url(#g)`
+            // fails to parse as a colour — so none of those elements ever carried the marker.
+            const out = rewriteCatalogMarkers('[data-darkreader-inline-fill] { x: y; }');
+            for (const excluded of ['[fill="none" i]', '[fill="currentColor" i]', '[fill^="url(" i]']) {
+                expect(out).toContain(`:not(${excluded})`);
+            }
+        });
+
         it('stays a single compound when the marker has a prefix', () => {
-            // The bug this guards: a bare comma-separated list splits the rule, and the second
-            // alternative loses the `g` prefix — so the rule stops being scoped and applies far
+            // The bug this guards: a bare comma-separated list splits the rule, and the later
+            // alternatives lose the `g` prefix — so the rule stops being scoped and applies far
             // more widely than the site fix intended.
             const out = rewriteCatalogMarkers('g[data-darkreader-inline-fill] { fill: black; }');
-            expect(out).toBe('g:is([fill], [style*="fill:"]) { fill: black; }');
+            expect(out).toBe(`g${FILL_PRESENCE} { fill: black; }`);
             // Specifically: no top-level comma introduced into the selector.
             expect(out.slice(0, out.indexOf('{'))).not.toMatch(/,(?![^()]*\))/);
         });
 
         it('stays scoped inside a descendant selector too', () => {
             const out = rewriteCatalogMarkers('.foo [data-darkreader-inline-color] { x: y; }');
-            expect(out).toBe('.foo :is([color], [style*="color:"]) { x: y; }');
+            expect(out).toBe(`.foo ${COLOR_PRESENCE} { x: y; }`);
         });
 
         it('covers both the attribute and the style-declaration form', () => {
@@ -56,7 +86,7 @@ describe('rewriteCatalogMarkers', () => {
             // fix silently stops applying to half the elements it used to.
             const out = rewriteCatalogMarkers('[data-darkreader-inline-bgcolor] { x: y; }');
             expect(out).toContain('[bgcolor]');
-            expect(out).toContain('[style*="background-color:"]');
+            expect(out).toContain('[style^="background-color:"]');
         });
     });
 
@@ -65,15 +95,22 @@ describe('rewriteCatalogMarkers', () => {
             // Left alone this is the dangerous one: with no marker written, :not(...) matches
             // EVERY element and the rule applies where it was written to be skipped.
             const out = rewriteCatalogMarkers('div.map:not([data-darkreader-inline-bgimage]) { x: y; }');
-            expect(out).toBe('div.map:not([style*="background-image:"]) { x: y; }');
+            expect(out).toBe(`div.map:not(${BGIMAGE_ALTERNATES}) { x: y; }`);
         });
 
-        it('is rewritten before the plain selector form, so the negation is not corrupted', () => {
-            // The plain-selector rewrite produces a comma-separated list. Inside :not() a comma
-            // changes the meaning, so ordering here is load-bearing, not cosmetic.
+        it('negates every alternative, not just one of them', () => {
+            // `:not(a, b)` matches elements matching NEITHER — Selectors 4, verified in Chromium.
+            // An earlier version of this module believed a comma inside `:not()` changed the
+            // meaning and shipped a deliberately narrower single-alternative negation instead.
             const out = rewriteCatalogMarkers(':not([data-darkreader-inline-fill]) { x: y; }');
-            expect(out).not.toContain(',');
-            expect(out).toBe(':not([style*="fill:"]) { x: y; }');
+            expect(out).toBe(`:not(${FILL_PRESENCE.slice(':is('.length, -1)}) { x: y; }`);
+        });
+
+        it('is rewritten before the plain selector form, so the negation is not nested', () => {
+            // Handling the plain form first would leave `:not(:is(...))` — valid, but a
+            // different specificity and a needless layer.
+            const out = rewriteCatalogMarkers(':not([data-darkreader-inline-fill]) { x: y; }');
+            expect(out).not.toContain(':not(:is(');
         });
     });
 
