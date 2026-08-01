@@ -321,3 +321,58 @@ describe('InlineStyleEngine', () => {
         expect(e.buildCSS()).toBe('');
     });
 });
+
+describe('an invalid ignore selector cannot abort the theming pass', () => {
+    // `matchesIgnored` calls `element.matches()`, and `matches()` THROWS SyntaxError on an
+    // invalid selector. That exception propagates out through `overrideInlineStyle` and aborts
+    // the whole discovery pass, so one typo in the synced catalog leaves the ENTIRE page
+    // unthemed — the exact failure the qualifier's validation exists to prevent, defeated by a
+    // sibling code path holding a second, unvalidated copy of the list.
+    const rejectBroken = (sel: string) => !sel.includes('((broken');
+
+    it('keeps only the selectors the parser accepted', () => {
+        const e = new InlineStyleEngine({
+            themer: themeIt, expand: expandIt, isValidSelector: rejectBroken,
+        });
+        e.setIgnoreSelectors(['.good *', '((broken', '  ', '.also-good']);
+        e.registerFacts({}, facts({style: 'color:#333'}));
+        expect(e.buildCSS()).toContain(':not(.good *, .also-good)');
+    });
+
+    it('emits no qualifier when every selector was rejected', () => {
+        const e = new InlineStyleEngine({
+            themer: themeIt, expand: expandIt, isValidSelector: rejectBroken,
+        });
+        e.setIgnoreSelectors(['((broken']);
+        e.registerFacts({}, facts({style: 'color:#333'}));
+        const css = e.buildCSS();
+        expect(css).toContain('[style="color:#333"] {');
+        expect(css).not.toContain(':not(');
+    });
+
+    it('never hands an unvalidated selector to element.matches()', () => {
+        // The direct assertion: whatever `register()` tests against must have passed the
+        // validator first. A fake element records every selector it is asked about.
+        const asked: string[] = [];
+        // Returns true for the valid selector, so `register()` takes its early-return path and
+        // never reaches `readElementFacts` — which needs a real DOM. The selector list is the
+        // thing under test here, not the element read.
+        const fake = {
+            matches(sel: string) {
+                asked.push(sel);
+                if (sel.includes('((broken')) {
+                    throw new SyntaxError(`'${sel}' is not a valid selector`);
+                }
+                return true;
+            },
+        } as unknown as Element;
+
+        const e = new InlineStyleEngine({
+            themer: themeIt, expand: expandIt, isValidSelector: rejectBroken,
+        });
+        e.setIgnoreSelectors(['.good *', '((broken']);
+        // Would throw if the raw list were used. The assertion is that it does not.
+        expect(() => e.register(fake)).not.toThrow();
+        expect(asked).toEqual(['.good *']);
+    });
+});

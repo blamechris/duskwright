@@ -167,7 +167,11 @@ test.describe('specificity, which matching assertions cannot see', () => {
     async function beats(selector: string, rival: string): Promise<boolean> {
         return page.evaluate(([sel, riv]) => {
             const host = document.getElementById('host')!;
-            host.innerHTML = '<svg class="c1 c2 c3 c4" fill="#fff" style="color:#333"></svg>';
+            // The marker attribute is present so the control selector actually MATCHES. Without
+            // it, `beats('[data-darkreader-inline-fill]', '.c1')` returned false because the
+            // selector matched nothing at all — the right answer, measured from nothing.
+            host.innerHTML =
+                '<svg class="c1 c2 c3 c4" fill="#fff" style="color:#333" data-darkreader-inline-fill></svg>';
             const style = document.createElement('style');
             style.textContent = `${sel} { opacity: 0.25 !important } ${riv} { opacity: 0.75 !important }`;
             document.head.appendChild(style);
@@ -182,7 +186,10 @@ test.describe('specificity, which matching assertions cannot see', () => {
         // A single class outranks a single attribute selector, so this must lose to `.c1` —
         // exactly as `[data-darkreader-inline-fill]` did.
         expect(await beats(selector, '.c1'), `${selector} outranks a single class`).toBe(false);
+        // The control, on an element that really carries the marker: same answer, so the two
+        // are being compared rather than one of them silently measuring nothing.
         expect(await beats('[data-darkreader-inline-fill]', '.c1')).toBe(false);
+        expect(await beats('[data-darkreader-inline-fill]', 'svg'), 'the control matches nothing').toBe(true);
     });
 
     test('the color presence test is no heavier either', async () => {

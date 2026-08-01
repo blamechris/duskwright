@@ -20,7 +20,7 @@ import type {AttributeSpec, EmitterStats} from './emitter';
 import {InlineRuleEmitter} from './emitter';
 import type {Expander} from './expand';
 import type {SelectorValidator} from './ignore';
-import {buildIgnoreQualifier, ignoresEverything} from './ignore';
+import {ignoresEverything, usableIgnoreSelectors} from './ignore';
 
 /**
  * Produce the themed replacement for one property/value pair, or null to leave it alone.
@@ -279,10 +279,20 @@ export class InlineStyleEngine {
      * dropped one at a time rather than allowed to poison the rule.
      */
     setIgnoreSelectors(selectors: readonly string[]): void {
-        this.ignoreSelectors = selectors;
+        // Validated ONCE, and the validated list is the only one used afterwards.
+        //
+        // `matchesIgnored` below calls `element.matches()` on these, and `matches()` THROWS
+        // SyntaxError on an invalid selector — which would propagate out through
+        // `overrideInlineStyle` and abort the whole discovery pass, so one typo in the synced
+        // catalog would leave the entire page unthemed. That is precisely the failure the
+        // qualifier's validation exists to prevent, and keeping a second unvalidated copy
+        // around defeated it.
+        this.ignoreSelectors = usableIgnoreSelectors(selectors, this.isValidSelector);
         this.ignoreEverything = ignoresEverything(selectors);
         this.emitter.setIgnoreQualifier(
-            this.ignoreEverything ? '' : buildIgnoreQualifier(selectors, this.isValidSelector),
+            this.ignoreEverything || this.ignoreSelectors.length === 0
+                ? ''
+                : `:not(${this.ignoreSelectors.join(', ')})`,
         );
     }
 
