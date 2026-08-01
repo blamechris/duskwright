@@ -9,6 +9,22 @@ import {rewriteCatalogMarkers, findMarkerSuffixes, MARKER_PROPERTIES} from '../.
 
 const CATALOG = join(__dirname, '../../../src/config/dynamic-theme-fixes.config');
 
+/** Commas at paren depth 0 — i.e. is this a selector LIST rather than one compound? */
+function topLevelCommas(selector: string): number {
+    let depth = 0;
+    let count = 0;
+    for (const c of selector) {
+        if (c === '(') {
+            depth++;
+        } else if (c === ')') {
+            depth--;
+        } else if (c === ',' && depth === 0) {
+            count++;
+        }
+    }
+    return count;
+}
+
 describe('rewriteCatalogMarkers', () => {
     describe('A — custom-property sets', () => {
         it('writes the real property instead of the handoff custom property', () => {
@@ -37,10 +53,14 @@ describe('rewriteCatalogMarkers', () => {
     //   - the attribute form excludes the values upstream never themed, or `[fill]` reaches
     //     `fill="none"` and `fill="url(#g)"` and repaints elements the marker never touched
     // Both are verified against a real parser in tests/purity/catalog-markers-browser.spec.ts.
-    const FILL_PRESENCE = ':is([fill]:not([fill="none" i]):not([fill="currentColor" i]):not([fill^="url(" i]), '
+    const FILL_PRESENCE = ':is([fill]:not(:where([fill="none" i], [fill="currentColor" i], [fill^="url(" i])), '
         + '[style^="fill:"], [style*=";fill:"], [style*="; fill:"])';
     const COLOR_PRESENCE = ':is([color], [style^="color:"], [style*=";color:"], [style*="; color:"])';
-    const BGIMAGE_ALTERNATES = '[style^="background-image:"], [style*=";background-image:"], [style*="; background-image:"]';
+    // The NEGATED form is deliberately BROAD — unanchored and value-blind. Under `:not()`,
+    // every element the presence test misses is one the fix wrongly applies to, so the two
+    // directions want opposite errors. See the note above `styleDeclarationAlternates`.
+    const BGIMAGE_BROAD = '[style*="background-image:"]';
+    const FILL_BROAD = '[fill], [style*="fill:"]';
 
     describe('B — marker used as a selector', () => {
         it('replaces it with a real presence test', () => {
@@ -61,9 +81,10 @@ describe('rewriteCatalogMarkers', () => {
             // `none` and `currentColor` are skipped by the colour maths outright, and `url(#g)`
             // fails to parse as a colour — so none of those elements ever carried the marker.
             const out = rewriteCatalogMarkers('[data-darkreader-inline-fill] { x: y; }');
-            for (const excluded of ['[fill="none" i]', '[fill="currentColor" i]', '[fill^="url(" i]']) {
-                expect(out).toContain(`:not(${excluded})`);
-            }
+            // In a single `:where()`, not chained `:not()`s — chained ones sum to (0,4,0),
+            // measured in Chromium. `:where()` contributes zero, so the rule keeps the (0,1,0)
+            // of the marker attribute it replaces.
+            expect(out).toContain(':not(:where([fill="none" i], [fill="currentColor" i], [fill^="url(" i]))');
         });
 
         it('stays a single compound when the marker has a prefix', () => {
@@ -72,8 +93,10 @@ describe('rewriteCatalogMarkers', () => {
             // more widely than the site fix intended.
             const out = rewriteCatalogMarkers('g[data-darkreader-inline-fill] { fill: black; }');
             expect(out).toBe(`g${FILL_PRESENCE} { fill: black; }`);
-            // Specifically: no top-level comma introduced into the selector.
-            expect(out.slice(0, out.indexOf('{'))).not.toMatch(/,(?![^()]*\))/);
+            // Specifically: no comma at paren depth 0. A regex cannot do this — the selector
+            // nests `:not(:where(a, b, c))` two deep — and the naive version passed on a
+            // selector that was fine and failed on one that was also fine.
+            expect(topLevelCommas(out.slice(0, out.indexOf('{')))).toBe(0);
         });
 
         it('stays scoped inside a descendant selector too', () => {
@@ -95,15 +118,24 @@ describe('rewriteCatalogMarkers', () => {
             // Left alone this is the dangerous one: with no marker written, :not(...) matches
             // EVERY element and the rule applies where it was written to be skipped.
             const out = rewriteCatalogMarkers('div.map:not([data-darkreader-inline-bgimage]) { x: y; }');
-            expect(out).toBe(`div.map:not(${BGIMAGE_ALTERNATES}) { x: y; }`);
+            expect(out).toBe(`div.map:not(${BGIMAGE_BROAD}) { x: y; }`);
         });
 
         it('negates every alternative, not just one of them', () => {
             // `:not(a, b)` matches elements matching NEITHER — Selectors 4, verified in Chromium.
             // An earlier version of this module believed a comma inside `:not()` changed the
-            // meaning and shipped a deliberately narrower single-alternative negation instead.
+            // meaning and shipped a single-alternative negation as a result.
             const out = rewriteCatalogMarkers(':not([data-darkreader-inline-fill]) { x: y; }');
-            expect(out).toBe(`:not(${FILL_PRESENCE.slice(':is('.length, -1)}) { x: y; }`);
+            expect(out).toBe(`:not(${FILL_BROAD}) { x: y; }`);
+        });
+
+        it('uses the BROAD presence test, not the narrow positive one', () => {
+            // Anchoring the negated form inverts its failure mode: every declaration shape the
+            // anchor misses becomes an element the fix applies to, overriding the page's own
+            // inline style. Measured on 4 of 5 real shapes (#80).
+            const out = rewriteCatalogMarkers(':not([data-darkreader-inline-color]) { x: y; }');
+            expect(out).toContain('[style*="color:"]');
+            expect(out).not.toContain('[style^="color:"]');
         });
 
         it('is rewritten before the plain selector form, so the negation is not nested', () => {

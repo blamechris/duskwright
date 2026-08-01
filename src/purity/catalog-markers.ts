@@ -46,9 +46,19 @@ export const MARKER_PROPERTIES: Readonly<Record<string, string>> = {
     'stopcolor': 'stop-color',
 };
 
+// A presence test is an approximation of a runtime predicate — "did the engine theme this
+// element's X?" — and the two directions want OPPOSITE errors:
+//
+//   used positively   `SELECTOR:is(<presence>)`   too broad  -> the fix applies where upstream
+//                                                              skipped it
+//   used negatively   `SELECTOR:not(<presence>)`  too narrow -> same thing
+//
+// So the positive form is built NARROW and the negative form BROAD. Both err toward "the fix
+// does not apply", which is the direction that leaves the page as the site intended.
+
 /**
  * The style-attribute forms of "this element declares P inline", anchored at the left
- * declaration boundary.
+ * declaration boundary. The NARROW form — for positive use only.
  *
  * A bare `[style*="color:"]` is WRONG, and wrong in the direction that silently over-applies:
  * it also matches `background-color:`, `border-color:`, `caret-color:` and every other
@@ -82,7 +92,35 @@ function styleDeclarationAlternates(property: string): string[] {
  * same value and an exact-match exclusion would miss it.
  */
 function presentationalAlternate(attr: string): string {
-    return `[${attr}]:not([${attr}="none" i]):not([${attr}="currentColor" i]):not([${attr}^="url(" i])`;
+    // `:where()` rather than three chained `:not()`s. Chained `:not()`s SUM: measured in
+    // Chromium, the chained form is (0,4,0) and beats `.c1.c2.c3`, which would let these rules
+    // win author `!important` fights upstream lost. `:where()` contributes zero specificity, so
+    // the whole thing stays (0,1,0) — the same as the `[data-darkreader-inline-*]` marker it
+    // replaces — while excluding exactly the same values.
+    return `[${attr}]:not(:where([${attr}="none" i], [${attr}="currentColor" i], [${attr}^="url(" i]))`;
+}
+
+/**
+ * The BROAD form, for negated use.
+ *
+ * Deliberately unanchored and value-blind. Inside `:not()`, every element this fails to match is
+ * one the fix wrongly applies to, so the failure mode of being too broad here is "the fix does
+ * not apply", and of being too narrow is "the fix overrides the page's own inline style". The
+ * anchored form misses at least five real declaration shapes (`;` followed by a tab, a newline
+ * or two spaces; an uppercase property; leading whitespace) — all of which the CSS parser
+ * accepts, so upstream wrote the marker for all of them. See #80.
+ */
+function broadPresenceAlternates(suffix: string): string[] | null {
+    const styleProp = MARKER_PROPERTIES[suffix];
+    if (!styleProp) {
+        return null;
+    }
+    const parts: string[] = [];
+    if (suffix === 'fill' || suffix === 'stroke' || suffix === 'color' || suffix === 'bgcolor') {
+        parts.push(`[${suffix}]`);
+    }
+    parts.push(`[style*="${styleProp}:"]`);
+    return parts;
 }
 
 /**
@@ -119,7 +157,7 @@ function inlinePresenceAlternates(suffix: string): string[] | null {
  * applies far more widely than the site fix intended.
  *
  * `:is()` also keeps specificity predictable: it takes that of its most specific argument, and
- * every argument here is a single attribute selector (possibly with `:not()`s of the same).
+ * every argument here is (0,1,0) — see `presentationalAlternate` for why that needed care.
  */
 function inlinePresenceSelector(suffix: string): string | null {
     const parts = inlinePresenceAlternates(suffix);
@@ -180,10 +218,13 @@ export function rewriteCatalogMarkers(cssText: string): string {
     // different position.
     //
     // `:not()` takes a full selector list — `:not(a, b)` matches elements matching neither,
-    // which is exactly what is wanted here (verified in Chromium; an earlier comment claimed
-    // otherwise and used a deliberately narrower single-alternative form as a result).
+    // which is what is wanted here. (Verified in Chromium. An earlier comment claimed a comma
+    // inside `:not()` changed the meaning, and used a single-alternative form as a result.)
+    //
+    // The BROAD presence test, per the note above `styleDeclarationAlternates`: under negation,
+    // anything the presence test misses is an element the fix wrongly applies to.
     out = out.replace(NEGATED_MARKER, (match, suffix: string) => {
-        const parts = inlinePresenceAlternates(suffix);
+        const parts = broadPresenceAlternates(suffix);
         return parts ? `:not(${parts.join(', ')})` : match;
     });
 

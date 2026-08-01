@@ -126,6 +126,19 @@ const overridesList = Object.values(overrides);
 const normalizedPropList: Record<string, string> = {};
 overridesList.forEach(({cssProp, customProp}) => normalizedPropList[customProp] = cssProp);
 
+/**
+ * Does the engine still write `data-darkreader-inline-*` marker attributes onto page elements?
+ *
+ * This is ADR 0001 items 1-5 — the violation E2 exists to remove — and it is still true. It is
+ * declared as a named constant because one other decision hangs off it: the fixes catalog's use
+ * of those markers (ADR 0005 D5) must be rewritten if and only if they are no longer written,
+ * and getting that sequencing wrong breaks site fixes in both directions at once. See
+ * `replaceCSSTemplates` in `index.ts`.
+ *
+ * Deleted, along with the branch that reads it, by the change that flips it to false.
+ */
+export const ENGINE_WRITES_INLINE_MARKERS = true;
+
 const INLINE_STYLE_ATTRS = ['style', 'fill', 'stop-color', 'stroke', 'bgcolor', 'color', 'background'];
 export const INLINE_STYLE_SELECTOR = INLINE_STYLE_ATTRS.map((attr) => `[${attr}]`).join(', ');
 

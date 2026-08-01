@@ -154,3 +154,59 @@ test('every rewritten catalog selector is one the parser accepts', async () => {
     }, selectors);
     expect(invalid).toEqual([]);
 });
+
+test.describe('specificity, which matching assertions cannot see', () => {
+    // The marker this replaces was `[data-darkreader-inline-fill]` — a single attribute
+    // selector, (0,1,0). Anything heavier lets these rules win author `!important` fights
+    // upstream lost, silently and only on pages that have such a fight.
+    //
+    // Measured rather than reasoned about, because reasoning got it wrong twice: chained
+    // `:not()`s SUM, so `[fill]:not(a):not(b):not(c)` is (0,4,0) and beats `.c1.c2.c3`.
+
+    /** Does `selector` beat `rival` when both carry !important and `rival` is declared later? */
+    async function beats(selector: string, rival: string): Promise<boolean> {
+        return page.evaluate(([sel, riv]) => {
+            const host = document.getElementById('host')!;
+            host.innerHTML = '<svg class="c1 c2 c3 c4" fill="#fff" style="color:#333"></svg>';
+            const style = document.createElement('style');
+            style.textContent = `${sel} { opacity: 0.25 !important } ${riv} { opacity: 0.75 !important }`;
+            document.head.appendChild(style);
+            const won = getComputedStyle(host.firstElementChild!).opacity === '0.25';
+            style.remove();
+            return won;
+        }, [selector, rival] as const);
+    }
+
+    test('the fill presence test is no heavier than the marker it replaces', async () => {
+        const selector = selectorOf(rewriteCatalogMarkers('[data-darkreader-inline-fill] { x: y }'));
+        // A single class outranks a single attribute selector, so this must lose to `.c1` —
+        // exactly as `[data-darkreader-inline-fill]` did.
+        expect(await beats(selector, '.c1'), `${selector} outranks a single class`).toBe(false);
+        expect(await beats('[data-darkreader-inline-fill]', '.c1')).toBe(false);
+    });
+
+    test('the color presence test is no heavier either', async () => {
+        const selector = selectorOf(rewriteCatalogMarkers('[data-darkreader-inline-color] { x: y }'));
+        expect(await beats(selector, '.c1')).toBe(false);
+    });
+});
+
+test.describe('the negated form is deliberately broad', () => {
+    // Under `:not()` the failure modes invert: an element the presence test MISSES is one the
+    // fix wrongly applies to, overriding the page's own inline style. So the negated form is
+    // unanchored and value-blind, the opposite of the positive one.
+    test('still excludes declaration shapes the anchored form would miss', async () => {
+        const selector = selectorOf(
+            rewriteCatalogMarkers('div.map:not([data-darkreader-inline-bgimage]) { x: y; }'),
+        );
+        const results = await matchesEach(selector, [
+            '<div class="map"></div>',
+            '<div class="map" style="a:1;\tbackground-image:url(a)"></div>',
+            '<div class="map" style="a:1;\nbackground-image:url(a)"></div>',
+            '<div class="map" style="a:1;  background-image:url(a)"></div>',
+            '<div class="map" style=" background-image:url(a)"></div>',
+        ]);
+        // Only the element with no inline background-image at all may match.
+        expect(results).toEqual([true, false, false, false, false]);
+    });
+});
