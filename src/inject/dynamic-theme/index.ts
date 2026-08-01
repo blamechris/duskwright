@@ -16,7 +16,7 @@ import type {AdoptedStyleSheetManager} from './adopted-style-manger';
 import {createAdoptedStyleSheetOverride, canHaveAdoptedStyleSheets} from './adopted-style-manger';
 import {combineFixes, findRelevantFix} from './fixes';
 import {getStyleInjectionMode, injectStyleAway, removeStyleContainer} from './injection';
-import {overrideInlineStyle, getInlineOverrideStyle, watchForInlineStyles, stopWatchingForInlineStyles, INLINE_STYLE_SELECTOR} from './inline-style';
+import {overrideInlineStyle, getInlineOverrideStyle, watchForInlineStyles, stopWatchingForInlineStyles, INLINE_STYLE_SELECTOR, ENGINE_WRITES_INLINE_MARKERS} from './inline-style';
 import {changeMetaThemeColorWhenAvailable, restoreMetaThemeColor} from './meta-theme-color';
 import {modifyBackgroundColor, modifyBorderColor, modifyForegroundColor} from './modify-colors';
 import {getModifiedUserAgentStyle, getModifiedFallbackStyle, cleanModificationCache, getSelectionColor, setFilterSelectorHandler} from './modify-css';
@@ -25,6 +25,7 @@ import {filterSelectors, cleanFilterSelectors, addFilterSelector} from './select
 import type {StyleElement, StyleManager} from './style-manager';
 import {manageStyle, getManageableStyles, cleanLoadingLinks, setIgnoredCSSURLs} from './style-manager';
 import {injectProxy} from './stylesheet-proxy';
+import {rewriteCatalogMarkers} from '../../purity/catalog-markers';
 import {resolveSchemeSelectors} from '../../purity/scheme-selectors';
 import {variablesStore} from './variables';
 import {watchForStyleChanges, stopWatchingForStyleChanges} from './watch';
@@ -308,7 +309,26 @@ function createShadowStaticStyleOverrides(root: ShadowRoot) {
 }
 
 function replaceCSSTemplates($cssText: string) {
-    return resolveSchemeSelectors($cssText, theme!.mode ? 'dark' : 'dimmed').replace(/\${(.+?)}/g, (_, $color) => {
+    // A load-time rewrite of the synced catalog, replacing something the engine used to provide
+    // by writing to a page-owned element: the scheme attribute on <html> (ADR 0001 item 7).
+    // Doing it here keeps the catalog itself unedited, so E9's scheduled sync stays clean.
+    let resolved = resolveSchemeSelectors($cssText, theme!.mode ? 'dark' : 'dimmed');
+
+    // The inline-marker rewrite (ADR 0005 D5) is the SECOND one, and it must not run yet.
+    //
+    // While the engine still writes `data-darkreader-inline-*`, those markers work exactly as
+    // upstream intended and the rewrite can only make things worse: catalog rules that set a
+    // `--darkreader-inline-*` custom property were inert unless the element carried the marker,
+    // so rewriting them to the real property removes that gate — and the rewritten rule then
+    // competes with the still-live marker rule instead of feeding it.
+    //
+    // It is turned on by the same change that stops the marker writes, where the gate is
+    // restored properly rather than approximated. Landed ahead of its caller, and tested, the
+    // same way the rest of the rule table was.
+    if (!ENGINE_WRITES_INLINE_MARKERS) {
+        resolved = rewriteCatalogMarkers(resolved);
+    }
+    return resolved.replace(/\${(.+?)}/g, (_, $color) => {
         const color = parseColorWithCache($color);
         if (color) {
             const lightness = getSRGBLightness(color.r, color.g, color.b);

@@ -100,6 +100,19 @@ export function unkeyableCollides(reason: UnkeyableReason): boolean {
     return reason === 'duplicate';
 }
 
+/**
+ * Key-field separator.
+ *
+ * U+0000 because key fields are arbitrary CSS text — an attribute value can contain any
+ * printable character, so a visible delimiter would make `a=b c` ambiguous with `a=b` + `c`.
+ * NUL cannot appear in an attribute value the DOM hands us, so it is the one safe choice.
+ *
+ * Written as an escape, NEVER as a literal. An earlier version embedded the raw byte in the
+ * source, which is invisible in review, breaks grep and editors, and made string-matching
+ * refactors silently fail. A reviewer flagged exactly this and I wrongly dismissed it.
+ */
+const KEY_SEP = '\u0000';
+
 const QUOTE = /['"]/;
 
 /**
@@ -366,5 +379,5 @@ export function declarationSelector(decl: Declaration): string {
  * and pretending otherwise is how note 1 above turns into silent mis-theming.
  */
 export function declarationKey(decl: Declaration): string {
-    return `${decl.operator} ${decl.fragment}`;
+    return `${decl.operator}${KEY_SEP}${decl.fragment}`;
 }

@@ -14,6 +14,17 @@
         "ever be REMOVED, and removing one means the corresponding ADR 0001 site is fixed. Adding",
         "an entry to make CI green is the thing CLAUDE.md forbids.",
         "",
+        "THE ONE CARVE-OUT: a NEW fixture starts with no baseline, so its first run is",
+        "indistinguishable from a regression and the suite correctly refuses it. Recording its",
+        "entries is allowed ONLY when every one of them is a violation already catalogued in",
+        "ADR 0001 and already present in other fixtures — i.e. the fixture found nothing new. If a",
+        "new fixture surfaces a violation no other fixture has, that is a discovery, and it gets an",
+        "ADR entry and an issue before it gets a baseline line.",
+        "",
+        "  ignore-inline-style.html (added with the ADR 0005 tier-2 corrections): 6 entries, all",
+        "  the existing inline write path (ADR 0001 items 1-5). They go to zero when that path is",
+        "  replaced, which is the point of the fixture.",
+        "",
         "Mapping to ADR 0001:",
         "  attribute style / data-darkreader-inline-*  -> items 1-3, 5, 6 (P0/P1, the Sheets failure)",
         "  #text churn under pre#serialized            -> the editor serializing our write into its own model",
@@ -49,6 +60,14 @@
             "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <td>",
             "attribute \"data-darkreader-inline-bgimage\" written on page-owned <td>",
             "attribute \"style\" written on page-owned <td>"
+        ],
+        "ignore-inline-style.html": [
+            "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-bgimage\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-color\" written on page-owned <div>",
+            "attribute \"data-darkreader-inline-fill\" written on page-owned <rect>",
+            "attribute \"style\" written on page-owned <div>",
+            "attribute \"style\" written on page-owned <rect>"
         ],
         "late-injected-styles.html": [
             "attribute \"data-darkreader-inline-bgcolor\" written on page-owned <div>",

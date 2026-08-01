@@ -24,6 +24,9 @@ const expand = createTableExpander({
     'background:#fff': [{property: 'background-color', value: 'rgb(255, 255, 255)'}],
 });
 
+/** The commonest tier-2 spec: `bgcolor` both themes and emits `background-color`. */
+const BG = {themeAs: 'background-color', emitAs: 'background-color'};
+
 const el = () => ({} as object);
 
 describe('InlineRuleEmitter', () => {
@@ -186,22 +189,52 @@ describe('InlineRuleEmitter', () => {
     describe('presentational attributes (tier 2)', () => {
         it('emits an exact attribute match', () => {
             const e = new InlineRuleEmitter(invert, expand);
-            e.updateAttribute(el(), 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(el(), 'bgcolor', '#fff', BG);
             expect(e.buildCSS()).toBe('[bgcolor="#fff"] { background-color: #111 !important; }');
         });
 
-        it('maps the attribute to a CSS property that is not its name', () => {
-            // bgcolor themes background-color; SVG fill can theme colour OR background-colour
-            // depending on geometry, so the mapping is the caller's to decide.
+        it('themes by one property and emits another (ADR 0005 D3)', () => {
+            // The engine themes SVG `stroke` as a colour but must WRITE `stroke`. Emitting the
+            // themed name instead would put `color:` in the rule, which paints no stroke at all.
             const e = new InlineRuleEmitter(invert, expand);
-            e.updateAttribute(el(), 'fill', '#fff', 'color');
-            expect(e.buildCSS()).toContain('[fill="#fff"] { color:');
+            e.updateAttribute(el(), 'stroke', '#fff', {themeAs: 'color', emitAs: 'stroke'});
+            expect(e.buildCSS()).toBe('[stroke="#fff"] { stroke: #111 !important; }');
+        });
+
+        it('restricts a rule to specific element types', () => {
+            // How the engine's JavaScript element-type check becomes a selector.
+            const e = new InlineRuleEmitter(invert, expand);
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'border-color', emitAs: 'stroke', tags: ['line', 'text'],
+            });
+            expect(e.buildCSS()).toContain('line[stroke="#fff"], text[stroke="#fff"]');
+        });
+
+        it('supports the complementary :not() case', () => {
+            const e = new InlineRuleEmitter(invert, expand);
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'color', emitAs: 'stroke', qualifier: ':not(line):not(text)',
+            });
+            expect(e.buildCSS()).toContain('[stroke="#fff"]:not(line):not(text)');
+        });
+
+        it('keeps the two halves of the line/text split as separate rules', () => {
+            // If the shape were not part of the key these would collapse into one rule, and
+            // one of the two element groups would be themed with the wrong modifier.
+            const e = new InlineRuleEmitter(invert, expand);
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'border-color', emitAs: 'stroke', tags: ['line', 'text'],
+            });
+            e.updateAttribute(el(), 'stroke', '#fff', {
+                themeAs: 'color', emitAs: 'stroke', qualifier: ':not(line):not(text)',
+            });
+            expect(e.stats().keys).toBe(2);
         });
 
         it('shares one rule across elements with the same attribute value', () => {
             const e = new InlineRuleEmitter(invert, expand);
             for (let i = 0; i < 20; i++) {
-                e.updateAttribute(el(), 'bgcolor', '#fff', 'background-color');
+                e.updateAttribute(el(), 'bgcolor', '#fff', BG);
             }
             expect(e.stats().keys).toBe(1);
         });
@@ -209,17 +242,17 @@ describe('InlineRuleEmitter', () => {
         it('treats an unchanged attribute as a true no-op', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             e.markClean();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             expect(e.hasChanges).toBe(false);
         });
 
         it('releases the old rule when the attribute value changes', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
-            e.updateAttribute(a, 'bgcolor', '#000', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
+            e.updateAttribute(a, 'bgcolor', '#000', BG);
             expect(e.stats().keys).toBe(1);
             expect(e.buildCSS()).toContain('[bgcolor="#000"]');
         });
@@ -227,8 +260,8 @@ describe('InlineRuleEmitter', () => {
         it('releases the rule when the attribute is removed', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
-            e.updateAttribute(a, 'bgcolor', null, 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
+            e.updateAttribute(a, 'bgcolor', null, BG);
             expect(e.stats().keys).toBe(0);
         });
 
@@ -236,7 +269,7 @@ describe('InlineRuleEmitter', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
             e.update(a, 'color:#333');
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             expect(e.stats().keys).toBe(2);
         });
 
@@ -249,7 +282,7 @@ describe('InlineRuleEmitter', () => {
             // and so never takes the short-circuit path. This one is the actual regression.
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
-            e.updateAttribute(a, 'fill', '#fff', 'color');
+            e.updateAttribute(a, 'stroke', '#fff', {themeAs: 'color', emitAs: 'stroke'});
             expect(e.stats().keys).toBe(1);
             e.release(a);
             expect(e.stats().keys).toBe(0);
@@ -260,14 +293,14 @@ describe('InlineRuleEmitter', () => {
             const e = new InlineRuleEmitter(invert, expand);
             const a = el();
             e.update(a, 'color:#333');
-            e.updateAttribute(a, 'bgcolor', '#fff', 'background-color');
+            e.updateAttribute(a, 'bgcolor', '#fff', BG);
             e.release(a);
             expect(e.stats().keys).toBe(0);
         });
 
         it('escapes a hostile attribute value', () => {
             const e = new InlineRuleEmitter(invert, expand);
-            e.updateAttribute(el(), 'bgcolor', '#fff" i],*{x:y}[a="', 'background-color');
+            e.updateAttribute(el(), 'bgcolor', '#fff" i],*{x:y}[a="', BG);
             expect(e.buildCSS()).toContain('\\"');
         });
     });
@@ -373,5 +406,114 @@ describe('shorthand expansion (ADR 0005 D1)', () => {
         }));
         e.update(el(), 'margin:1px');
         expect(e.stats().keys).toBe(0);
+    });
+});
+
+describe('lifecycle bugs a WeakMap shortcut can hide', () => {
+    const BGCOLOR = {themeAs: 'background-color', emitAs: 'background-color'};
+
+    it('re-themes a presentational attribute after clear()', () => {
+        // `updateAttribute` short-circuits when the slot already holds this key — but `clear()`
+        // cannot empty a WeakMap, so without a generation check the element still claims a rule
+        // that was deleted, returns early, and is never themed again. Exactly the bug the
+        // generation counter was added for on tier 1, missed on tier 2.
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        expect(e.stats().keys).toBe(1);
+
+        e.clear();
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+    });
+
+    it('does not let a stale slot release another element\'s rule', () => {
+        // After clear(), a stale slot names a key that no longer exists. If a DIFFERENT element
+        // has since recreated that key, releasing the stale slot decrements a live rule to zero
+        // and deletes it — un-theming an element that never changed.
+        const e = new InlineRuleEmitter(invert, expand);
+        const stale = el();
+        e.updateAttribute(stale, 'bgcolor', '#fff', BGCOLOR);
+        e.clear();
+
+        const fresh = el();
+        e.updateAttribute(fresh, 'bgcolor', '#fff', BGCOLOR);
+        e.release(stale); // the stale element goes away
+
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+    });
+
+    it('keeps tier-2 rules alive when the style attribute changes', () => {
+        // `update()` releases this element's declaration keys. Releasing the whole token takes
+        // the attribute rules with it, and the caller registers those AFTER the style attribute
+        // — so every style change silently un-themes every bgcolor, stroke and fill on the same
+        // element until the next full pass.
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        e.update(t, 'color:#333');
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+
+        // And again on a genuine change, which is the path the "correct" ordering still hits.
+        e.update(t, 'color:#444');
+        expect(e.buildCSS()).toContain('[bgcolor="#fff"]');
+        expect(e.stats().keys).toBe(2);
+    });
+
+    it('still releases both tiers when the element itself goes away', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.update(t, 'color:#333');
+        e.updateAttribute(t, 'bgcolor', '#fff', BGCOLOR);
+        e.release(t);
+        expect(e.stats().keys).toBe(0);
+    });
+});
+
+describe('the tier-1 half of the same stale-key bug', () => {
+    // The tier-2 tests above have exact twins here. Fixing one half and not the other is the
+    // pattern this epic keeps repeating, so both halves are asserted side by side.
+
+    it('does not let a stale declaration release another element\'s rule', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        const stale = el();
+        e.update(stale, 'color:#333');
+        e.clear();
+
+        const fresh = el();
+        e.update(fresh, 'color:#333');
+        e.release(stale);
+
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[style="color:#333"]');
+    });
+
+    it('does not corrupt the refcount when a stale element re-registers', () => {
+        // The nastier shape: nothing looks wrong at the time. The stale element releases the
+        // live rule and immediately recreates it, so refs reads 1 for two elements — and the
+        // NEXT release un-themes an element that never changed.
+        const e = new InlineRuleEmitter(invert, expand);
+        const stale = el();
+        e.update(stale, 'color:#333');
+        e.clear();
+
+        const fresh = el();
+        e.update(fresh, 'color:#333');
+        e.update(stale, 'color:#333');
+        e.release(fresh);
+
+        expect(e.stats().keys).toBe(1);
+        expect(e.buildCSS()).toContain('[style="color:#333"]');
+    });
+
+    it('re-themes a declaration after clear(), like tier 2 does', () => {
+        const e = new InlineRuleEmitter(invert, expand);
+        const t = el();
+        e.update(t, 'color:#333');
+        e.clear();
+        e.update(t, 'color:#333');
+        expect(e.stats().keys).toBe(1);
     });
 });
