@@ -11,6 +11,15 @@
         "codex"
       ]
     },
+    "catchup": {
+      "hash": "3f7f775",
+      "installed": "2026-08-01",
+      "profileHash": "cdb7807",
+      "targets": [
+        "claude",
+        "codex"
+      ]
+    },
     "check-pr": {
       "hash": "cc062bc",
       "installed": "2026-07-25",
@@ -55,6 +64,26 @@
       "hash": "1e5962e",
       "installed": "2026-07-25",
       "profileHash": "1a0dd88",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "learn": {
+      "hash": "df2de5e",
+      "installed": "2026-08-01",
+      "profileHash": "cdb7807",
+      "targets": [
+        "claude",
+        "gemini",
+        "codex"
+      ]
+    },
+    "session-lifecycle": {
+      "hash": "a60ffaf",
+      "installed": "2026-08-01",
+      "profileHash": "cdb7807",
       "targets": [
         "claude",
         "gemini",

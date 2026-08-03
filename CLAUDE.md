@@ -120,12 +120,14 @@ src/
   purity/                 OURS. Runtime ownership tracking the harness asserts against.
 
 tests/
-  unit/                   Vitest.
+  unit/                   Jest (ADR 0003 D4 — not Vitest; see below).
   purity/                 Playwright. THE BLOCKING GATE.
   e2e/                    Playwright.
   fixtures/               The ~30-site corpus. Built in E1 — every later epic is measured against it.
 
 docs/adr/                 Architecture decisions. Anything diverging from ARCHITECTURE.md lands here.
+docs/handoffs/            One note per session boundary, YYYY-MM-DD-<slug>.md. The newest is what a
+                          fresh session reads to pick up — see /session-lifecycle.
 ARCHITECTURE.md           Design of record. Left unedited; ADRs are the diff against it.
 ```
 
