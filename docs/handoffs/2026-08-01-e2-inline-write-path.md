@@ -135,7 +135,7 @@ Surfaced through `stats().deferred` so the gap is a number rather than a surpris
 |---|---|---|
 | SVG `fill` on non-`<text>` | Modifier depends on measured geometry — one selector would need two answers | #78 |
 | Whole-`<svg>` inversion | Per-element async image analysis, and a P1 write | #78 |
-| `background-image: url()` | Async; refused before the themer so no image load starts | #78 |
+| `background-image: url()` | Async; refused before the themer runs, so no image load starts | #78 |
 | `var()` values, inline `!important` | Not implied by the text we key on | #79 |
 
 `stats()` has no caller yet — #87.

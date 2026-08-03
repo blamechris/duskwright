@@ -31,7 +31,8 @@
   running two runners would split it for no gain, ADR 0003 D4)
 - Purity harness (blocking): `npm run test:purity` (Playwright)
 - E2E: `npm run test:e2e` (Playwright)
-- Lint/typecheck: `npm run lint` (ESLint + Prettier)
+- Lint: `npm run lint` (ESLint only — there is no Prettier step and no separate typecheck
+  script; `tsc` runs as part of `npm run build`)
 
 ## Conventions
 - Branch prefix / naming: `feat/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`
