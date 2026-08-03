@@ -9,8 +9,11 @@
 - **Main branch:** main
 - **CI:** GitHub Actions `.github/workflows/ci.yml` — jobs `hygiene`, `lint`, `build`, `test`,
   `purity`. `purity` is a blocking gate and must never be weakened to make a PR pass.
-- **Status:** Bootstrapping. E0 (repo setup) landing; E1 (fork ingest) next. No source imported yet,
-  so `lint`/`build`/`test`/`purity` jobs self-skip until their prerequisites exist.
+- **Status:** E0 (bootstrap), E1 (fork ingest + fixture corpus) and E2's core are landed. The
+  inline write path is removed and `tests/purity/known-violations.json` is **empty** — every fixture
+  in the corpus produces zero observable mutations of page-owned DOM. All CI jobs do real work.
+  Remaining E2: node insertion into page DOM (#20), the conflicting-plugin mutation war (#21), the
+  MAIN-world proxy decision (#25), and the Google Sheets round-trip (#24).
 - **Hard requirements (never regress):**
   - **The purity invariant.** The extension must never produce a mutation of the page DOM that the
     page's own JavaScript can observe as a change to its own content or serialize into its document
@@ -24,13 +27,12 @@
 
 ## Build / Test Commands
 - Build (the gate): `npm run build`
-- Test: `npm test` (Vitest, unit)
+- Test: `npm test` (Jest, unit — NOT Vitest; upstream ships a working Jest suite and
+  running two runners would split it for no gain, ADR 0003 D4)
 - Purity harness (blocking): `npm run test:purity` (Playwright)
 - E2E: `npm run test:e2e` (Playwright)
-- Lint/typecheck: `npm run lint` (ESLint + Prettier)
-
-Note: these npm scripts land with E1/E2. Before then, `hygiene` is the only CI job that does real
-work.
+- Lint: `npm run lint` (ESLint only — there is no Prettier step and no separate typecheck
+  script; `tsc` runs as part of `npm run build`)
 
 ## Conventions
 - Branch prefix / naming: `feat/`, `fix/`, `refactor/`, `test/`, `docs/`, `chore/`
@@ -120,7 +122,7 @@ Mindset: *"Can the page tell we were here? Can it save what we did into its own 
   `blocked` label.
 ### Priority signals
 - `purity` → always P0
-- `site-coverage` → P2 until the E1 fixture corpus exists
+- `site-coverage` → P2 (the E1 fixture corpus exists; site work is gated behind E7)
 
 ## swarm-audit Customizations
 

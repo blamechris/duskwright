@@ -53,7 +53,7 @@ The agent reviews against these standards:
 #### Testing
 - [ ] **A change to theming behaviour without a fixture is incomplete** — say so explicitly rather than deferring it
 - [ ] `npm run test:purity` covers the new path; the harness was not weakened, excluded, or skipped to make the PR pass
-- [ ] Vitest unit coverage for pure functions, especially scope precedence and selector generation
+- [ ] Jest unit coverage for pure functions, especially scope precedence and selector generation
 - [ ] Tests pass
 - [ ] New functionality has test coverage where appropriate
 - [ ] No test regressions
