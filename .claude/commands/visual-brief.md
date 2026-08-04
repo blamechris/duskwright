@@ -91,8 +91,14 @@ Use the skeleton below. Rules:
 
 - **Inline `<style>` only** — no CDN links, no JS frameworks. A little vanilla JS
   is fine (e.g. a copy button); the file must work opened directly via `file://`.
-- **House style:** dark theme, sectioned cards, status chips, tables, monospace
-  code blocks. Keep it scannable — short lines, clear hierarchy, no fluff.
+- **House style:** sectioned cards, status chips, tables, monospace code blocks.
+  Keep it scannable — short lines, clear hierarchy, no fluff.
+- **Follow the reader's theme, don't impose one.** The skeleton ships dark by
+  default and flips to light under `prefers-color-scheme`. Every colour must go
+  through a CSS variable so that one media query flips the whole document —
+  writing a literal hex into a rule produces a brief that looks correct to you and
+  broken to a reader on the other setting. No JS theme switching: it needs none,
+  and a script would reintroduce a flash of the wrong theme.
 - **Citations:** render `path:line` references in a monospace pill so they read as
   clickable locations. Group a code brief around a "flow" the reader can follow.
 - **Honesty surfaces:** if something is unverified / needs the user, mark it
@@ -103,9 +109,36 @@ Use the skeleton below. Rules:
 ```bash
 DIR="${ARG_DIR:-${CLAUDE_BRIEF_DIR:-$HOME/.claude/briefs}}"
 mkdir -p "$DIR"
-# …write the file to "$DIR/<slug>-<date>.html"…
-[ -z "$NO_OPEN" ] && open "$DIR/<slug>-<date>.html"   # macOS; skip with --no-open
+FILE="$DIR/<slug>-<date>.html"
+# …write the file to "$FILE"…
+
+# Launch the browser portably. Opening is a convenience, never a gate: if no
+# launcher exists (headless box, container, CI) we print the path and succeed.
+open_brief() {
+  if [ -n "$NO_OPEN" ]; then return 0; fi          # --no-open
+  for opener in open xdg-open wslview; do          # macOS, Linux, WSL
+    if command -v "$opener" >/dev/null 2>&1; then
+      "$opener" "$1" >/dev/null 2>&1 && return 0
+    fi
+  done
+  if command -v cmd.exe >/dev/null 2>&1; then      # Windows / Git Bash / MSYS
+    cmd.exe /c start "" "$1" >/dev/null 2>&1 && return 0
+  elif command -v start >/dev/null 2>&1; then      # "" is start's window-title arg
+    start "" "$1" >/dev/null 2>&1 && return 0
+  fi
+  # Reached both when no launcher exists and when one exists but failed — the
+  # loop above returns early only on a launcher that actually succeeded.
+  echo "no browser launcher found, or it failed — open the path printed below"
+  return 0                                         # never abort the caller
+}
+open_brief "$FILE"
+echo "$FILE"
 ```
+
+Two things that snippet is deliberately careful about — keep them if you edit it:
+`open_brief` always returns 0, so a missing or failing launcher can't kill a
+caller running under `set -e`; and it ends on `echo`, so the block's exit status
+isn't the short-circuited `--no-open` test.
 
 Report the absolute path so the user can find/link it. If `$CLAUDE_BRIEF_DIR`
 points into an Obsidian vault, mention it's now linkable there.
@@ -117,10 +150,21 @@ points into an Obsidian vault, mention it's now linkable there.
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{TITLE}}</title>
 <style>
-  :root{--bg:#0b0d12;--panel:#141821;--panel2:#1b212d;--line:#262d3b;--ink:#e8ecf3;
-    --dim:#9aa6b8;--faint:#6b7689;--accent:#7c9cff;--accent2:#a78bfa;--ok:#4ade80;
-    --warn:#fbbf24;--bad:#f87171;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;}
-  *{box-sizing:border-box} body{margin:0;background:radial-gradient(1200px 700px at 70% -10%,#1a2030,var(--bg) 55%);
+  /* Dark is the house default; the light block below overrides it when the READER
+     prefers light. Every colour goes through a variable so one media query flips
+     the whole document — a hardcoded hex here is a bug that only shows in one theme. */
+  :root{color-scheme:dark light;
+    --bg:#0b0d12;--panel:#141821;--panel2:#1b212d;--line:#262d3b;--ink:#e8ecf3;
+    --dim:#9aa6b8;--faint:#7d8a9f;--accent:#7c9cff;--accent2:#a78bfa;--ok:#4ade80;
+    --warn:#fbbf24;--bad:#f87171;--glow:#1a2030;--code-bg:#0e131c;--code-ink:#cdd7ea;
+    --ref-bg:#16202e;--callout-bg:#221a08;--callout-line:#4a3a12;--shadow:rgba(0,0,0,.35);
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  @media (prefers-color-scheme:light){:root{
+    --bg:#f6f7fa;--panel:#ffffff;--panel2:#eef1f6;--line:#d5dbe5;--ink:#161b26;
+    --dim:#4f5a70;--faint:#5c6678;--accent:#2350c8;--accent2:#6b32c9;--ok:#0f7a37;
+    --warn:#8a5300;--bad:#bf2020;--glow:#e8edfa;--code-bg:#eef1f6;--code-ink:#1d2836;
+    --ref-bg:#e4ecfc;--callout-bg:#fdf5e3;--callout-line:#e8d5a3;--shadow:rgba(15,23,42,.10);}}
+  *{box-sizing:border-box} body{margin:0;background:radial-gradient(1200px 700px at 70% -10%,var(--glow),var(--bg) 55%);
     color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:48px 20px 96px}
   .wrap{max-width:820px;margin:0 auto} .eyebrow{font:600 12px/1 var(--mono);letter-spacing:.18em;
     text-transform:uppercase;color:var(--accent2)} h1{font-size:32px;margin:14px 0 6px;letter-spacing:-.02em}
@@ -129,17 +173,17 @@ points into an Obsidian vault, mention it's now linkable there.
     border-radius:999px;padding:7px 14px;font-size:13px;color:var(--dim)}
   .dot{width:8px;height:8px;border-radius:50%}.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
   section{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px 26px;margin:18px 0;
-    box-shadow:0 12px 40px rgba(0,0,0,.35)} section h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+    box-shadow:0 12px 40px var(--shadow)} section h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
     color:var(--accent);margin:0 0 16px} table{width:100%;border-collapse:collapse;font-size:14.5px}
   th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
   th{font:600 11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
-  tr:last-child td{border-bottom:none} code{font:13px/1.5 var(--mono);background:#0e131c;border:1px solid var(--line);
-    border-radius:6px;padding:2px 7px;color:#cdd7ea} .ref{font:12px/1 var(--mono);background:#16202e;
+  tr:last-child td{border-bottom:none} code{font:13px/1.5 var(--mono);background:var(--code-bg);border:1px solid var(--line);
+    border-radius:6px;padding:2px 7px;color:var(--code-ink)} .ref{font:12px/1 var(--mono);background:var(--ref-bg);
     border:1px solid var(--line);color:var(--accent);border-radius:6px;padding:3px 7px}
-  .pre{background:#0e131c;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
-    font:13px/1.7 var(--mono);color:#cdd7ea;overflow:auto} .flow{display:grid;gap:10px}
+  .pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    font:13px/1.7 var(--mono);color:var(--code-ink);overflow:auto} .flow{display:grid;gap:10px}
   .step{display:flex;gap:12px;align-items:baseline} .step .n{font:700 13px/1 var(--mono);color:var(--accent2);min-width:1.4em}
-  .callout{background:#221a08;border:1px solid #4a3a12;border-left:3px solid var(--warn);border-radius:12px;padding:16px 18px;margin:16px 0}
+  .callout{background:var(--callout-bg);border:1px solid var(--callout-line);border-left:3px solid var(--warn);border-radius:12px;padding:16px 18px;margin:16px 0}
   .callout b{color:var(--warn)} .ok{color:var(--ok)} a{color:var(--accent)} footer{margin-top:30px;text-align:center;color:var(--faint);font-size:13px}
 </style></head><body><div class="wrap">
   <header><div class="eyebrow">{{EYEBROW}}</div><h1>{{TITLE}}</h1><p class="sub">{{SUBTITLE}}</p>
@@ -175,4 +219,4 @@ Component cheatsheet:
 - When a flex row needs rich body text, wrap it: `<div class="row"><div class="ic">
   …</div><div>…all the prose…</div></div>` — two flex children, not twenty.
 
-<!-- skill-templates: visual-brief a4c08cb 2026-07-25 -->
+<!-- skill-templates: visual-brief b6ef0bc 2026-08-03 -->
