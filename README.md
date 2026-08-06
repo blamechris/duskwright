@@ -1,8 +1,9 @@
 # Duskwright
 
 Dark mode for Chrome that **never writes to the page**. A fork of
-[Dark Reader](https://github.com/darkreader/darkreader) adding an element picker, per-scope rules,
-and a CI-enforced non-destructiveness guarantee.
+[Dark Reader](https://github.com/darkreader/darkreader) adding an element picker, per-scope rules
+(both in development — see [`ROADMAP.md`](ROADMAP.md)), and a CI-enforced non-destructiveness
+guarantee.
 
 [![CI](https://github.com/blamechris/duskwright/actions/workflows/ci.yml/badge.svg)](https://github.com/blamechris/duskwright/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -58,7 +59,7 @@ is still light — and flag pages it only partially themed instead of failing si
 
 ### 3. You can fix it yourself
 
-**Not built yet — this is epics E3 and E4.** A devtools-style element picker will let you point at a
+**Not built yet — these are epics E3 and E4.** A devtools-style element picker will let you point at a
 region and darken it by hand, with a live preview. Rules will persist per origin, path prefix, exact
 URL, or pattern. This is the only mechanism that can ever work on canvas-rendered apps like Google
 Docs and Figma, where there is no DOM text to recolor and no DOM-based engine can help.
