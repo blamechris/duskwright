@@ -1,7 +1,4 @@
-# Umbra — Architecture & Design
-
-> Working name. Alternates: **Penumbra**, **Nocturne**, **Duskwright**, **Shade**.
-> The build agent should confirm name + availability on the Chrome Web Store before rebranding the fork.
+# Duskwright — Architecture & Design
 
 **What it is:** a fork of [Dark Reader](https://github.com/darkreader/darkreader) (MIT) that adds a
 user-driven element picker, per-scope rule persistence, and a hard non-destructiveness guarantee.
