@@ -1,0 +1,12 @@
+Fixture: tests/fixtures/pages/contenteditable-editor.html (the Google-Docs failure shape)
+Extension build: build/release/chrome-mv3
+
+Editor document model (doc.innerHTML), extension OFF vs ON:
+  sha256 9f23589629f609520399aaf97609a974b6870abd988104eef162fb22b7c437e6  (identical both sides)
+
+Page-owned DOM: zero mutations (purity suite baseline = 0 known violations, CI-enforced).
+Theme sheets live in extension-owned <style class="darkreader"> nodes in <head>;
+the page body and the editor's serialized model are byte-identical with the extension on.
+
+Caption guidance: claim "the editor's serialized document model is byte-identical",
+NOT "the whole page outerHTML is byte-identical" (head contains extension-owned sheets).
