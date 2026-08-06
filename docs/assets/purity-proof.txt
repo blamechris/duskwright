@@ -1,0 +1,19 @@
+Fixture: tests/fixtures/pages/contenteditable-editor.html (the Google-Docs failure shape)
+Extension build: build/release/chrome-mv3
+
+Editor document model (doc.innerHTML), extension OFF vs ON:
+  sha256 9f23589629f609520399aaf97609a974b6870abd988104eef162fb22b7c437e6  (identical both sides)
+
+Page-owned DOM: zero mutations (purity suite baseline = 0 known violations, CI-enforced).
+Theme sheets live in extension-owned <style class="darkreader"> nodes — in <head> in this
+capture. (Placement is mode-dependent: on a small list of hosts the injector instead appends
+a hidden extension-owned container to <body>; see src/inject/dynamic-theme/injection.ts.
+In either mode the sheets are extension-owned, never page-owned DOM.) In this capture the
+page <body> and the editor's serialized model are byte-identical with the extension on.
+
+Note: whole-page outerHTML is NOT identical across runs — in this capture <head> contains
+the extension-owned theme sheets; the byte-identity claim is scoped to the editor's
+serialized document model (doc.innerHTML).
+
+Raw captures: purity-extension-off.png and purity-extension-on.png are the unedited
+screenshots the composite (purity-before-after.png) was built from.
