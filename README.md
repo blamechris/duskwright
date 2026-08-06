@@ -17,7 +17,9 @@ and a CI-enforced non-destructiveness guarantee.
 with Duskwright off (left) and on (right). The page renders dark, but the editor's serialized
 document model is byte-identical in both runs (same SHA-256), because theming never touches anything
 the page could capture into your document. Fixture, build, and hashes are recorded in
-[the provenance note](docs/assets/purity-proof.txt).*
+[the provenance note](docs/assets/purity-proof.txt) (raw captures:
+[extension off](docs/assets/purity-extension-off.png),
+[extension on](docs/assets/purity-extension-on.png)).*
 
 ## What makes it different
 
@@ -44,6 +46,9 @@ what the forked engine actually does today, and what has to change to get there,
 [ADR 0001](docs/adr/0001-upstream-purity-audit.md). Where auditing the real source contradicted the
 design doc, [ADR 0002](docs/adr/0002-architecture-doc-corrections.md) records the correction rather
 than quietly resolving it. The remaining E2 work is listed in [`ROADMAP.md`](ROADMAP.md).
+
+See the [purity demo](#duskwright) at the top of this README — the editor's document model is
+byte-identical with the extension on and off.
 
 ### 2. It tells you when it didn't work
 

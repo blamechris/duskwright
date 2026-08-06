@@ -8,5 +8,9 @@ Page-owned DOM: zero mutations (purity suite baseline = 0 known violations, CI-e
 Theme sheets live in extension-owned <style class="darkreader"> nodes in <head>;
 the page body and the editor's serialized model are byte-identical with the extension on.
 
-Caption guidance: claim "the editor's serialized document model is byte-identical",
-NOT "the whole page outerHTML is byte-identical" (head contains extension-owned sheets).
+Note: whole-page outerHTML is NOT identical across runs — <head> contains extension-owned
+theme sheets; the byte-identity claim is scoped to the editor's serialized document model
+(doc.innerHTML).
+
+Raw captures: purity-extension-off.png and purity-extension-on.png are the unedited
+screenshots the composite (purity-before-after.png) was built from.
