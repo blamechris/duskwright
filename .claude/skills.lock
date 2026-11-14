@@ -109,8 +109,8 @@
       ]
     },
     "visual-brief": {
-      "hash": "b6ef0bc",
-      "installed": "2026-08-03",
+      "hash": "4a39c94",
+      "installed": "2026-11-03",
       "profileHash": "269ded2",
       "targets": [
         "claude",
