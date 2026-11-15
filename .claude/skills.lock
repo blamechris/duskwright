@@ -80,8 +80,8 @@
       ]
     },
     "session-lifecycle": {
-      "hash": "bcb8822",
-      "installed": "2026-11-03",
+      "hash": "0f0cc15",
+      "installed": "2026-11-14",
       "profileHash": "269ded2",
       "targets": [
         "claude",
